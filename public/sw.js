@@ -1,4 +1,4 @@
-const CACHE_NAME = 'my-food-list-shell-v1';
+const CACHE_NAME = 'my-food-list-shell-v2';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -16,6 +16,10 @@ self.addEventListener('activate', (event) => {
 // Only cache same-origin GET requests for the static app shell. Supabase API
 // calls (a different origin) are intentionally never intercepted here, so
 // restaurant data is always read live, never served stale from a cache.
+//
+// Network-first, cache as offline fallback only. This app ships frequent
+// code changes (not just data), so always prefer the live deploy when
+// online; the cache exists purely so the shell still loads with no signal.
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
@@ -24,15 +28,14 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
-    caches.open(CACHE_NAME).then(async (cache) => {
-      const cached = await cache.match(req);
-      const network = fetch(req)
-        .then((res) => {
-          if (res && res.ok) cache.put(req, res.clone());
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.open(CACHE_NAME).then((cache) => cache.match(req)))
   );
 });
