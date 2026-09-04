@@ -1,0 +1,108 @@
+'use client';
+
+import { useState } from 'react';
+import { saveRatingAndNotes } from '@/lib/actions';
+import type { RestaurantWithDishes } from '@/lib/types';
+
+export default function RatingEditor({
+  restaurant,
+  onClose,
+  onSaved,
+}: {
+  restaurant: RestaurantWithDishes;
+  onClose: () => void;
+  onSaved: (rating: number | null, notes: string) => void;
+}) {
+  const initialRating =
+    typeof restaurant.rating === 'number'
+      ? restaurant.rating
+      : restaurant.rating
+      ? parseFloat(String(restaurant.rating))
+      : null;
+  const [rating, setRating] = useState<number | null>(initialRating);
+  const [notes, setNotes] = useState(restaurant.user_notes || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      await saveRatingAndNotes(restaurant.id, rating, notes);
+      onSaved(rating, notes);
+      onClose();
+    } catch (e) {
+      setError(
+        "Couldn't save — your Supabase table needs a write policy for this key. Ask Claude to help enable it."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md bg-forest-800 rounded-t-2xl p-5 pb-8 safe-bottom animate-fade-slide"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="w-10 h-1 bg-cream-300/20 rounded-full mx-auto mb-4" />
+        <h3 className="font-serif text-lg text-cream-50 mb-4">{restaurant.name}</h3>
+
+        <p className="text-xs uppercase tracking-wide text-cream-300/60 mb-2">Your rating</p>
+        <div className="flex gap-1.5 mb-5">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button
+              key={n}
+              onClick={() => setRating(n === rating ? null : n)}
+              className="p-1 tap-highlight-none"
+              aria-label={`Rate ${n} star${n > 1 ? 's' : ''}`}
+            >
+              <svg
+                width="26"
+                height="26"
+                viewBox="0 0 24 24"
+                fill={rating != null && n <= rating ? '#d4af6a' : 'none'}
+                stroke={rating != null && n <= rating ? '#d4af6a' : '#e8d9b5'}
+                strokeOpacity={rating != null && n <= rating ? 1 : 0.4}
+                strokeWidth="1.6"
+              >
+                <path d="M12 2.5l2.9 6.1 6.6.7-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.1 1.3-6.6-4.9-4.6 6.6-.7L12 2.5z" />
+              </svg>
+            </button>
+          ))}
+        </div>
+
+        <p className="text-xs uppercase tracking-wide text-cream-300/60 mb-2">Notes</p>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={3}
+          placeholder="What did you think?"
+          className="w-full bg-forest-900 border border-cream-300/15 rounded-xl p-3 text-sm text-cream-50 placeholder:text-cream-300/40 focus:outline-none focus:border-gold-500/50 resize-none"
+        />
+
+        {error && <p className="text-xs text-red-300 mt-3">{error}</p>}
+
+        <div className="flex gap-3 mt-5">
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 rounded-xl border border-cream-300/20 text-cream-100 text-sm font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 py-3 rounded-xl bg-gold-500 text-forest-950 text-sm font-semibold disabled:opacity-60"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
