@@ -1,6 +1,7 @@
 'use client';
 
 import { supabase } from './supabase';
+import type { Dish, VisitAgain } from './types';
 
 /**
  * Writes back to Supabase (mark tried, rating, notes). These require an
@@ -10,9 +11,10 @@ import { supabase } from './supabase';
  * permission error, which the UI surfaces rather than pretending to succeed.
  */
 export async function markTried(id: number) {
+  const now = new Date().toISOString();
   const { error } = await supabase
     .from('restaurants')
-    .update({ status: 'Tried', updated_at: new Date().toISOString() })
+    .update({ status: 'Tried', updated_at: now, last_visited_at: now })
     .eq('id', id);
   if (error) throw error;
 }
@@ -25,14 +27,42 @@ export async function markWantToTry(id: number) {
   if (error) throw error;
 }
 
-export async function saveRatingAndNotes(id: number, rating: number | null, notes: string) {
+/** Star rating, free-text notes, and "would I go back?" are all saved together. */
+export async function saveRatingAndNotes(
+  id: number,
+  rating: number | null,
+  notes: string,
+  visitAgain: VisitAgain | null
+) {
   const { error } = await supabase
     .from('restaurants')
     .update({
       rating,
       user_notes: notes || null,
+      visit_again: visitAgain,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id);
   if (error) throw error;
+}
+
+/** Thumbs up / down on an existing dish (from the original list or one you added). */
+export async function setDishLiked(dishId: number, liked: boolean | null) {
+  const { error } = await supabase.from('dishes').update({ liked }).eq('id', dishId);
+  if (error) throw error;
+}
+
+/** Add a dish you tried that wasn't already on the list, with an immediate verdict. */
+export async function addTriedDish(
+  restaurantId: number,
+  name: string,
+  liked: boolean | null
+): Promise<Dish> {
+  const { data, error } = await supabase
+    .from('dishes')
+    .insert({ restaurant_id: restaurantId, name, liked })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Dish;
 }

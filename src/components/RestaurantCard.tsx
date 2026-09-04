@@ -1,11 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import type { RestaurantWithDishes } from '@/lib/types';
+import type { Dish, RestaurantWithDishes, VisitAgain } from '@/lib/types';
 import PriorityBadge from './PriorityBadge';
 import RatingEditor from './RatingEditor';
-import { markTried, markWantToTry } from '@/lib/actions';
+import DishThumbs, { ThumbDownIcon, ThumbUpIcon } from './DishThumbs';
+import { addTriedDish, markTried, markWantToTry } from '@/lib/actions';
 import { formatDistance } from '@/lib/geo';
+
+const VISIT_AGAIN_LABEL: Record<VisitAgain, string> = {
+  yes: 'Would go back',
+  maybe: 'Might go back',
+  no: 'Would not go back',
+};
 
 function mapUrl(r: RestaurantWithDishes) {
   if (r.latitude != null && r.longitude != null) {
@@ -40,11 +47,39 @@ export default function RestaurantCard({
   const [r, setR] = useState(restaurant);
   const [showRating, setShowRating] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [addingDish, setAddingDish] = useState(false);
+  const [newDishName, setNewDishName] = useState('');
+  const [savingDish, setSavingDish] = useState(false);
+  const [dishError, setDishError] = useState<string | null>(null);
 
   const mustOrder = r.dishes.filter((d) => d.must_order);
   const others = r.dishes.filter((d) => !d.must_order);
   const ratingNum =
     typeof r.rating === 'number' ? r.rating : r.rating ? parseFloat(String(r.rating)) : null;
+
+  function updateDishLiked(dishId: number, liked: boolean | null) {
+    setR((prev) => ({
+      ...prev,
+      dishes: prev.dishes.map((d) => (d.id === dishId ? { ...d, liked } : d)),
+    }));
+  }
+
+  async function handleAddDish(liked: boolean | null) {
+    const name = newDishName.trim();
+    if (!name) return;
+    setSavingDish(true);
+    setDishError(null);
+    try {
+      const dish: Dish = await addTriedDish(r.id, name, liked);
+      setR((prev) => ({ ...prev, dishes: [...prev.dishes, dish] }));
+      setNewDishName('');
+      setAddingDish(false);
+    } catch {
+      setDishError("Couldn't save — ask Claude to check the dish write policy.");
+    } finally {
+      setSavingDish(false);
+    }
+  }
 
   async function handleToggleTried() {
     setBusy(true);
@@ -116,13 +151,14 @@ export default function RestaurantCard({
             <PriorityBadge priority={r.priority} />
           </div>
 
-          {(mustOrder.length > 0 || others.length > 0) && (
-            <div className="mt-4">
-              <p className="text-xs uppercase tracking-wide text-cream-300/50 mb-2">
-                What to order
-              </p>
-              {mustOrder.map((d) => (
-                <div key={d.id} className="flex items-start gap-2 text-[14px] text-cream-50 mb-1.5">
+          <div className="mt-4">
+            <p className="text-xs uppercase tracking-wide text-cream-300/50 mb-2">Dishes</p>
+            {mustOrder.map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center justify-between gap-2 text-[14px] text-cream-50 mb-1.5"
+              >
+                <span className="flex items-start gap-2">
                   <svg
                     className="mt-0.5 shrink-0"
                     width="13"
@@ -138,15 +174,88 @@ export default function RestaurantCard({
                       <span className="text-cream-300/60"> — {d.description}</span>
                     )}
                   </span>
+                </span>
+                <DishThumbs
+                  dishId={d.id}
+                  liked={d.liked}
+                  onChange={(liked) => updateDishLiked(d.id, liked)}
+                />
+              </div>
+            ))}
+            {others.map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center justify-between gap-2 text-[13.5px] text-cream-300/80 mb-1.5"
+              >
+                <span>{d.name}</span>
+                <DishThumbs
+                  dishId={d.id}
+                  liked={d.liked}
+                  onChange={(liked) => updateDishLiked(d.id, liked)}
+                />
+              </div>
+            ))}
+
+            <div className="mt-2">
+              {addingDish ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    value={newDishName}
+                    onChange={(e) => setNewDishName(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    placeholder="Dish name"
+                    className="flex-1 min-w-0 bg-forest-900 border border-cream-300/15 rounded-lg px-3 py-2 text-[13.5px] text-cream-50 placeholder:text-cream-300/40 focus:outline-none focus:border-gold-500/50"
+                  />
+                  <button
+                    disabled={savingDish || !newDishName.trim()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleAddDish(true);
+                    }}
+                    aria-label="Add and mark liked"
+                    className="p-2 rounded-lg bg-forest-900/60 text-gold-400 disabled:opacity-40 tap-highlight-none"
+                  >
+                    <ThumbUpIcon filled={false} />
+                  </button>
+                  <button
+                    disabled={savingDish || !newDishName.trim()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleAddDish(false);
+                    }}
+                    aria-label="Add and mark didn't like"
+                    className="p-2 rounded-lg bg-forest-900/60 text-red-300 disabled:opacity-40 tap-highlight-none"
+                  >
+                    <ThumbDownIcon filled={false} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAddingDish(false);
+                      setNewDishName('');
+                      setDishError(null);
+                    }}
+                    aria-label="Cancel"
+                    className="p-2 text-cream-300/50 tap-highlight-none text-lg leading-none"
+                  >
+                    ✕
+                  </button>
                 </div>
-              ))}
-              {others.length > 0 && (
-                <p className="text-[13.5px] text-cream-300/70 mt-1">
-                  {others.map((d) => d.name).join(' · ')}
-                </p>
+              ) : (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAddingDish(true);
+                  }}
+                  className="text-[13px] text-gold-400/90 tap-highlight-none"
+                >
+                  + Add a dish you tried
+                </button>
               )}
+              {dishError && <p className="text-xs text-red-300 mt-2">{dishError}</p>}
             </div>
-          )}
+          </div>
 
           {(r.user_notes || r.summary) && (
             <div className="mt-4">
@@ -176,6 +285,12 @@ export default function RestaurantCard({
                 </svg>
               ))}
             </div>
+          )}
+
+          {r.visit_again && (
+            <p className="text-[13px] text-cream-300/70 mt-2">
+              {VISIT_AGAIN_LABEL[r.visit_again]}
+            </p>
           )}
 
           {r.address && (
@@ -230,8 +345,8 @@ export default function RestaurantCard({
         <RatingEditor
           restaurant={r}
           onClose={() => setShowRating(false)}
-          onSaved={(rating, notes) =>
-            setR((prev) => ({ ...prev, rating, user_notes: notes || null }))
+          onSaved={(rating, notes, visitAgain) =>
+            setR((prev) => ({ ...prev, rating, user_notes: notes || null, visit_again: visitAgain }))
           }
         />
       )}

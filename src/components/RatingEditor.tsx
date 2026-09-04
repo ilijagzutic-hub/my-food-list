@@ -2,7 +2,13 @@
 
 import { useState } from 'react';
 import { saveRatingAndNotes } from '@/lib/actions';
-import type { RestaurantWithDishes } from '@/lib/types';
+import type { RestaurantWithDishes, VisitAgain } from '@/lib/types';
+
+const VISIT_AGAIN_OPTIONS: { value: VisitAgain; label: string }[] = [
+  { value: 'yes', label: 'Yes' },
+  { value: 'maybe', label: 'Maybe' },
+  { value: 'no', label: 'No' },
+];
 
 export default function RatingEditor({
   restaurant,
@@ -11,7 +17,7 @@ export default function RatingEditor({
 }: {
   restaurant: RestaurantWithDishes;
   onClose: () => void;
-  onSaved: (rating: number | null, notes: string) => void;
+  onSaved: (rating: number | null, notes: string, visitAgain: VisitAgain | null) => void;
 }) {
   const initialRating =
     typeof restaurant.rating === 'number'
@@ -21,6 +27,7 @@ export default function RatingEditor({
       : null;
   const [rating, setRating] = useState<number | null>(initialRating);
   const [notes, setNotes] = useState(restaurant.user_notes || '');
+  const [visitAgain, setVisitAgain] = useState<VisitAgain | null>(restaurant.visit_again);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,8 +35,8 @@ export default function RatingEditor({
     setSaving(true);
     setError(null);
     try {
-      await saveRatingAndNotes(restaurant.id, rating, notes);
-      onSaved(rating, notes);
+      await saveRatingAndNotes(restaurant.id, rating, notes, visitAgain);
+      onSaved(rating, notes, visitAgain);
       onClose();
     } catch (e) {
       setError(
@@ -72,6 +79,23 @@ export default function RatingEditor({
               >
                 <path d="M12 2.5l2.9 6.1 6.6.7-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.1 1.3-6.6-4.9-4.6 6.6-.7L12 2.5z" />
               </svg>
+            </button>
+          ))}
+        </div>
+
+        <p className="text-xs uppercase tracking-wide text-cream-300/60 mb-2">Go back again?</p>
+        <div className="flex gap-2 mb-5">
+          {VISIT_AGAIN_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setVisitAgain(visitAgain === opt.value ? null : opt.value)}
+              className={`flex-1 py-2 rounded-xl text-[13px] font-medium tap-highlight-none border ${
+                visitAgain === opt.value
+                  ? 'bg-gold-500 text-forest-950 border-gold-500'
+                  : 'bg-forest-900 text-cream-100 border-cream-300/15'
+              }`}
+            >
+              {opt.label}
             </button>
           ))}
         </div>
