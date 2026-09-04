@@ -1,6 +1,3 @@
 {
-  "rewrites": [
-    { "source": "/:dir/", "destination": "/:dir/index.html" },
-    { "source": "/:dir", "destination": "/:dir/index.html" }
-  ]
+  "framework": "nextjs"
 }
