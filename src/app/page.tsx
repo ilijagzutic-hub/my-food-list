@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRestaurants } from '@/lib/useRestaurants';
-import { topRecommendations } from '@/lib/search';
+import { rankRestaurants, topRecommendations } from '@/lib/search';
 import { getBrowserLocation } from '@/lib/geo';
 import type { Coords } from '@/lib/types';
 import RestaurantList from '@/components/RestaurantList';
@@ -39,13 +39,15 @@ export default function HomePage() {
     };
   }, []);
 
+  // A typed craving is a real search: it should surface every match —
+  // including places already marked Tried — not just a curated "what's
+  // next" shortlist. The untried, no-query "tonight's picks" feed is the
+  // only view that stays capped and Want-to-try-only.
   const recommendations = useMemo(
     () =>
-      topRecommendations(
-        restaurants,
-        { query, coords, status: 'Want to try' },
-        hasQuery || coords ? 5 : 4
-      ),
+      hasQuery
+        ? rankRestaurants(restaurants, { query, coords, status: 'All' })
+        : topRecommendations(restaurants, { coords, status: 'Want to try' }, coords ? 5 : 4),
     [restaurants, query, coords, hasQuery]
   );
 
