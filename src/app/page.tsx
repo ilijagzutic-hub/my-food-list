@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRestaurants } from '@/lib/useRestaurants';
 import { topRecommendations } from '@/lib/search';
+import { getBrowserLocation } from '@/lib/geo';
 import type { Coords } from '@/lib/types';
 import RestaurantList from '@/components/RestaurantList';
 import LocationInput from '@/components/LocationInput';
@@ -14,8 +15,29 @@ export default function HomePage() {
   const [query, setQuery] = useState('');
   const [coords, setCoords] = useState<Coords | null>(null);
   const [locationLabel, setLocationLabel] = useState('');
+  const [locationDenied, setLocationDenied] = useState(false);
 
   const hasQuery = query.trim().length > 0;
+
+  // Silently try the device's location on load so "tonight's picks" is
+  // distance-aware by default, instead of pulling from anywhere in the city.
+  // If the user has already set a location by hand (typed or tapped the pin)
+  // by the time this resolves, their choice wins.
+  useEffect(() => {
+    let cancelled = false;
+    getBrowserLocation().then((c) => {
+      if (cancelled) return;
+      if (c) {
+        setCoords((prev) => prev ?? c);
+        setLocationLabel((prev) => prev || 'Current location');
+      } else {
+        setLocationDenied(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const recommendations = useMemo(
     () =>
@@ -74,6 +96,11 @@ export default function HomePage() {
 
       <section className="px-4 mt-7">
         <h2 className="font-serif text-[18px] text-cream-50 mb-3">{heading}</h2>
+        {locationDenied && !coords && !hasQuery && (
+          <p className="text-[12.5px] text-cream-300/50 -mt-2 mb-3">
+            Turn on location, or search above, for picks near you.
+          </p>
+        )}
 
         {loading && (
           <p className="text-cream-300/50 text-sm py-8 text-center">Loading your list…</p>
