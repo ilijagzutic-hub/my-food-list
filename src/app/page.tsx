@@ -2,13 +2,45 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRestaurants } from '@/lib/useRestaurants';
-import { rankRestaurants, topRecommendations } from '@/lib/search';
+import {
+  rankRestaurants,
+  topPicksForYou,
+  worthTryingSoon,
+  goBackHere,
+  somethingNew,
+  type RankedRestaurant,
+} from '@/lib/search';
 import { getBrowserLocation } from '@/lib/geo';
 import type { Coords } from '@/lib/types';
 import RestaurantList from '@/components/RestaurantList';
 import LocationInput from '@/components/LocationInput';
 import CravingChips from '@/components/CravingChips';
+import QuickActions from '@/components/QuickActions';
+import SectionHeading from '@/components/SectionHeading';
 import BottomNav from '@/components/BottomNav';
+
+function Rail({
+  title,
+  subtitle,
+  restaurants,
+  emptyMessage,
+}: {
+  title: string;
+  subtitle?: string;
+  restaurants: RankedRestaurant[];
+  emptyMessage: string;
+}) {
+  return (
+    <section className="px-4 mt-7">
+      <SectionHeading title={title} subtitle={subtitle} />
+      {restaurants.length === 0 ? (
+        <p className="text-cream-300/50 text-[13.5px] py-4">{emptyMessage}</p>
+      ) : (
+        <RestaurantList restaurants={restaurants} />
+      )}
+    </section>
+  );
+}
 
 export default function HomePage() {
   const { restaurants, loading, error } = useRestaurants();
@@ -16,13 +48,14 @@ export default function HomePage() {
   const [coords, setCoords] = useState<Coords | null>(null);
   const [locationLabel, setLocationLabel] = useState('');
   const [locationDenied, setLocationDenied] = useState(false);
+  const [somethingNewPick, setSomethingNewPick] = useState<RankedRestaurant | null | undefined>(
+    undefined
+  );
 
   const hasQuery = query.trim().length > 0;
 
-  // Silently try the device's location on load so "tonight's picks" is
-  // distance-aware by default, instead of pulling from anywhere in the city.
-  // If the user has already set a location by hand (typed or tapped the pin)
-  // by the time this resolves, their choice wins.
+  // Silently try the device's location on load so distance-aware sections
+  // work by default, instead of pulling from anywhere in the city.
   useEffect(() => {
     let cancelled = false;
     getBrowserLocation().then((c) => {
@@ -39,26 +72,29 @@ export default function HomePage() {
     };
   }, []);
 
-  // A typed craving is a real search: it should surface every match —
-  // including places already marked Tried — not just a curated "what's
-  // next" shortlist. The untried, no-query "tonight's picks" feed is the
-  // only view that stays capped and Want-to-try-only.
-  const recommendations = useMemo(
-    () =>
-      hasQuery
-        ? rankRestaurants(restaurants, { query, coords, status: 'All' })
-        : topRecommendations(restaurants, { coords, status: 'Want to try' }, coords ? 5 : 4),
+  // A typed craving is a real search: it surfaces every match, including
+  // Tried places, rather than the curated Want-to-try-only rails below.
+  const searchResults = useMemo(
+    () => (hasQuery ? rankRestaurants(restaurants, { query, coords, status: 'All' }) : []),
     [restaurants, query, coords, hasQuery]
   );
 
-  const heading = hasQuery
-    ? `For "${query}"`
-    : coords
-    ? 'Strong picks near you'
-    : 'Tonight’s strongest picks';
+  const topPicks = useMemo(
+    () => topPicksForYou(restaurants, { coords }),
+    [restaurants, coords]
+  );
+  const worthTrying = useMemo(
+    () => worthTryingSoon(restaurants, { coords }),
+    [restaurants, coords]
+  );
+  const goBack = useMemo(() => goBackHere(restaurants, { coords }), [restaurants, coords]);
+
+  function pickSomethingNew() {
+    setSomethingNewPick(somethingNew(restaurants, { coords }));
+  }
 
   return (
-    <main className="max-w-md mx-auto min-h-screen pb-24">
+    <main className="max-w-md md:max-w-2xl lg:max-w-4xl mx-auto min-h-screen pb-24">
       <header className="px-4 pt-safe-top pt-8 pb-2">
         <p className="text-[11px] uppercase tracking-[0.2em] text-gold-400/80 mb-1">
           My Food List
@@ -94,27 +130,78 @@ export default function HomePage() {
           }}
           locationLabel={locationLabel}
         />
-      </section>
-
-      <section className="px-4 mt-7">
-        <h2 className="font-serif text-[18px] text-cream-50 mb-3">{heading}</h2>
-        {locationDenied && !coords && !hasQuery && (
-          <p className="text-[12.5px] text-cream-300/50 -mt-2 mb-3">
+        {locationDenied && !coords && (
+          <p className="text-[12.5px] text-cream-300/50 mt-2">
             Turn on location, or search above, for picks near you.
           </p>
         )}
-
-        {loading && (
-          <p className="text-cream-300/50 text-sm py-8 text-center">Loading your list…</p>
-        )}
-        {error && <p className="text-red-300 text-sm py-8 text-center">{error}</p>}
-        {!loading && !error && (
-          <RestaurantList
-            restaurants={recommendations}
-            emptyMessage="Nothing matched that craving yet — try Browse All."
-          />
-        )}
       </section>
+
+      <section className="px-4 mt-5">
+        <label className="text-xs uppercase tracking-wide text-cream-300/50 mb-2 block">
+          Quick actions
+        </label>
+        <QuickActions onSomethingNew={pickSomethingNew} />
+      </section>
+
+      {somethingNewPick !== undefined && (
+        <section className="px-4 mt-5">
+          <SectionHeading
+            title="Something new"
+            subtitle="A Want-to-try pick, weighted toward your priorities"
+            action={
+              <button onClick={pickSomethingNew} className="text-[13px] text-gold-400 tap-highlight-none">
+                Try another
+              </button>
+            }
+          />
+          {somethingNewPick === null ? (
+            <p className="text-cream-300/50 text-[13.5px] py-4">
+              Nothing left on your Want to Try list to suggest.
+            </p>
+          ) : (
+            <RestaurantList restaurants={[somethingNewPick]} />
+          )}
+        </section>
+      )}
+
+      {loading && (
+        <p className="text-cream-300/50 text-sm py-8 text-center">Loading your list…</p>
+      )}
+      {error && <p className="text-red-300 text-sm py-8 text-center">{error}</p>}
+
+      {!loading && !error && hasQuery && (
+        <section className="px-4 mt-7">
+          <SectionHeading title={`For "${query}"`} />
+          <RestaurantList
+            restaurants={searchResults}
+            emptyMessage="Nothing matched that craving yet — try Explore."
+          />
+        </section>
+      )}
+
+      {!loading && !error && !hasQuery && (
+        <>
+          <Rail
+            title="Top picks for you"
+            subtitle="Discovery — places you haven't tried yet"
+            restaurants={topPicks}
+            emptyMessage="Add a few more Want to Try spots to see picks here."
+          />
+          <Rail
+            title="Worth trying soon"
+            subtitle="Your HIGH / VERY HIGH priority untried spots"
+            restaurants={worthTrying}
+            emptyMessage="Nothing marked HIGH or VERY HIGH priority yet."
+          />
+          <Rail
+            title="Go back here"
+            subtitle="Tried, and you said you'd return"
+            restaurants={goBack}
+            emptyMessage="Once you've been back somewhere you loved, it'll show up here."
+          />
+        </>
+      )}
 
       <BottomNav />
     </main>

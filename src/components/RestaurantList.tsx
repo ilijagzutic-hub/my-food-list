@@ -22,7 +22,7 @@ export default function RestaurantList({
   }
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-2.5 md:grid md:grid-cols-2 md:gap-3 lg:grid-cols-3">
       {restaurants.map((r) => (
         <RestaurantCard
           key={r.id}

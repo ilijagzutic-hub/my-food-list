@@ -52,6 +52,15 @@ export async function setDishLiked(dishId: number, liked: boolean | null) {
   if (error) throw error;
 }
 
+/** Favourite is a separate, personal "saved favourite" signal — distinct from Priority. */
+export async function setFavourite(id: number, isFavourite: boolean) {
+  const { error } = await supabase
+    .from('restaurants')
+    .update({ is_favourite: isFavourite, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+
 /** Add a dish you tried that wasn't already on the list, with an immediate verdict. */
 export async function addTriedDish(
   restaurantId: number,

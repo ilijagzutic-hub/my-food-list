@@ -1,6 +1,7 @@
 export type Priority = 'LOW' | 'NORMAL' | 'HIGH' | 'VERY HIGH';
 export type Status = 'Want to try' | 'Tried';
 export type VisitAgain = 'yes' | 'maybe' | 'no';
+export type DishStatus = 'known_for' | 'want_to_try' | 'tried';
 
 export interface Restaurant {
   id: number;
@@ -27,6 +28,7 @@ export interface Restaurant {
   location_precision: string | null;
   visit_again: VisitAgain | null;
   last_visited_at: string | null;
+  is_favourite: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -41,6 +43,7 @@ export interface Dish {
   temporary: boolean | null;
   sort_order: number | null;
   liked: boolean | null;
+  dish_status: DishStatus | null;
 }
 
 export interface RestaurantWithDishes extends Restaurant {

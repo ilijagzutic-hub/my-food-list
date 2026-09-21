@@ -1,11 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import type { Dish, RestaurantWithDishes, VisitAgain } from '@/lib/types';
+import Link from 'next/link';
+import type { RestaurantWithDishes, VisitAgain } from '@/lib/types';
 import PriorityBadge from './PriorityBadge';
 import RatingEditor from './RatingEditor';
-import DishThumbs, { ThumbDownIcon, ThumbUpIcon } from './DishThumbs';
-import { addTriedDish, markTried, markWantToTry } from '@/lib/actions';
+import RatingStars from './RatingStars';
+import DishCatalogue from './DishCatalogue';
+import FavouriteToggle from './FavouriteToggle';
+import { markTried, markWantToTry } from '@/lib/actions';
 import { formatDistance } from '@/lib/geo';
 
 const VISIT_AGAIN_LABEL: Record<VisitAgain, string> = {
@@ -47,39 +50,9 @@ export default function RestaurantCard({
   const [r, setR] = useState(restaurant);
   const [showRating, setShowRating] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [addingDish, setAddingDish] = useState(false);
-  const [newDishName, setNewDishName] = useState('');
-  const [savingDish, setSavingDish] = useState(false);
-  const [dishError, setDishError] = useState<string | null>(null);
 
-  const mustOrder = r.dishes.filter((d) => d.must_order);
-  const others = r.dishes.filter((d) => !d.must_order);
   const ratingNum =
     typeof r.rating === 'number' ? r.rating : r.rating ? parseFloat(String(r.rating)) : null;
-
-  function updateDishLiked(dishId: number, liked: boolean | null) {
-    setR((prev) => ({
-      ...prev,
-      dishes: prev.dishes.map((d) => (d.id === dishId ? { ...d, liked } : d)),
-    }));
-  }
-
-  async function handleAddDish(liked: boolean | null) {
-    const name = newDishName.trim();
-    if (!name) return;
-    setSavingDish(true);
-    setDishError(null);
-    try {
-      const dish: Dish = await addTriedDish(r.id, name, liked);
-      setR((prev) => ({ ...prev, dishes: [...prev.dishes, dish] }));
-      setNewDishName('');
-      setAddingDish(false);
-    } catch {
-      setDishError("Couldn't save — ask Claude to check the dish write policy.");
-    } finally {
-      setSavingDish(false);
-    }
-  }
 
   async function handleToggleTried() {
     setBusy(true);
@@ -105,17 +78,44 @@ export default function RestaurantCard({
         expanded ? 'shadow-cardHover' : 'shadow-card'
       }`}
     >
-      <button
+      {/* A div (not a <button>) so the favourite star and the detail-page
+          link below can be real, independently-clickable buttons/links
+          nested inside — buttons can't legally nest in HTML. */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onToggle}
-        className="w-full text-left px-4 py-3.5 flex flex-col gap-1 tap-highlight-none active:bg-forest-800"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        className="w-full text-left px-4 py-3.5 flex flex-col gap-1 tap-highlight-none active:bg-forest-800 cursor-pointer"
       >
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-serif text-[17px] leading-snug text-cream-50">{r.name}</h3>
-          {r.status === 'Tried' && (
-            <span className="shrink-0 text-[11px] uppercase tracking-wide text-cream-300/50 mt-0.5">
-              Tried
-            </span>
-          )}
+          <div className="shrink-0 flex items-center gap-2.5 mt-0.5">
+            {r.status === 'Tried' && (
+              <span className="text-[11px] uppercase tracking-wide text-cream-300/50">Tried</span>
+            )}
+            <FavouriteToggle
+              restaurantId={r.id}
+              isFavourite={r.is_favourite}
+              onChange={(next) => setR((prev) => ({ ...prev, is_favourite: next }))}
+              size={17}
+            />
+            <Link
+              href={`/restaurant/${r.id}/`}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`View full details for ${r.name}`}
+              className="text-cream-300/50 tap-highlight-none"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </Link>
+          </div>
         </div>
         <div className="flex items-center gap-2 text-[13px] text-cream-300/70">
           <span>{r.suburb || r.city || r.region}</span>
@@ -134,7 +134,7 @@ export default function RestaurantCard({
         <div className="mt-1">
           <PriorityBadge priority={r.priority} />
         </div>
-      </button>
+      </div>
 
       {expanded && (
         <div className="px-4 pb-4 pt-1 border-t border-cream-300/10 animate-fade-slide">
@@ -153,108 +153,11 @@ export default function RestaurantCard({
 
           <div className="mt-4">
             <p className="text-xs uppercase tracking-wide text-cream-300/50 mb-2">Dishes</p>
-            {mustOrder.map((d) => (
-              <div
-                key={d.id}
-                className="flex items-center justify-between gap-2 text-[14px] text-cream-50 mb-1.5"
-              >
-                <span className="flex items-start gap-2">
-                  <svg
-                    className="mt-0.5 shrink-0"
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="#d4af6a"
-                  >
-                    <path d="M12 2.5l2.9 6.1 6.6.7-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.1 1.3-6.6-4.9-4.6 6.6-.7L12 2.5z" />
-                  </svg>
-                  <span>
-                    {d.name}
-                    {d.description && (
-                      <span className="text-cream-300/60"> — {d.description}</span>
-                    )}
-                  </span>
-                </span>
-                <DishThumbs
-                  dishId={d.id}
-                  liked={d.liked}
-                  onChange={(liked) => updateDishLiked(d.id, liked)}
-                />
-              </div>
-            ))}
-            {others.map((d) => (
-              <div
-                key={d.id}
-                className="flex items-center justify-between gap-2 text-[13.5px] text-cream-300/80 mb-1.5"
-              >
-                <span>{d.name}</span>
-                <DishThumbs
-                  dishId={d.id}
-                  liked={d.liked}
-                  onChange={(liked) => updateDishLiked(d.id, liked)}
-                />
-              </div>
-            ))}
-
-            <div className="mt-2">
-              {addingDish ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    autoFocus
-                    value={newDishName}
-                    onChange={(e) => setNewDishName(e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder="Dish name"
-                    className="flex-1 min-w-0 bg-forest-900 border border-cream-300/15 rounded-lg px-3 py-2 text-[13.5px] text-cream-50 placeholder:text-cream-300/40 focus:outline-none focus:border-gold-500/50"
-                  />
-                  <button
-                    disabled={savingDish || !newDishName.trim()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleAddDish(true);
-                    }}
-                    aria-label="Add and mark liked"
-                    className="p-2 rounded-lg bg-forest-900/60 text-gold-400 disabled:opacity-40 tap-highlight-none"
-                  >
-                    <ThumbUpIcon filled={false} />
-                  </button>
-                  <button
-                    disabled={savingDish || !newDishName.trim()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleAddDish(false);
-                    }}
-                    aria-label="Add and mark didn't like"
-                    className="p-2 rounded-lg bg-forest-900/60 text-red-300 disabled:opacity-40 tap-highlight-none"
-                  >
-                    <ThumbDownIcon filled={false} />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setAddingDish(false);
-                      setNewDishName('');
-                      setDishError(null);
-                    }}
-                    aria-label="Cancel"
-                    className="p-2 text-cream-300/50 tap-highlight-none text-lg leading-none"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setAddingDish(true);
-                  }}
-                  className="text-[13px] text-gold-400/90 tap-highlight-none"
-                >
-                  + Add a dish you tried
-                </button>
-              )}
-              {dishError && <p className="text-xs text-red-300 mt-2">{dishError}</p>}
-            </div>
+            <DishCatalogue
+              restaurantId={r.id}
+              dishes={r.dishes}
+              onDishesChange={(dishes) => setR((prev) => ({ ...prev, dishes }))}
+            />
           </div>
 
           {(r.user_notes || r.summary) && (
@@ -269,21 +172,8 @@ export default function RestaurantCard({
           )}
 
           {ratingNum != null && (
-            <div className="mt-4 flex items-center gap-1">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <svg
-                  key={n}
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill={n <= ratingNum ? '#d4af6a' : 'none'}
-                  stroke="#d4af6a"
-                  strokeOpacity={n <= ratingNum ? 1 : 0.35}
-                  strokeWidth="1.6"
-                >
-                  <path d="M12 2.5l2.9 6.1 6.6.7-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.1 1.3-6.6-4.9-4.6 6.6-.7L12 2.5z" />
-                </svg>
-              ))}
+            <div className="mt-4">
+              <RatingStars value={ratingNum} />
             </div>
           )}
 

@@ -152,3 +152,65 @@ export function topRecommendations(
 ): RankedRestaurant[] {
   return rankRestaurants(restaurants, opts).slice(0, count);
 }
+
+// ---------------------------------------------------------------------------
+// Home V2 curated rails. Each reuses the same rankRestaurants scoring engine
+// (no separate/duplicated filtering logic) — they differ only in which
+// status/priority slice of the ranked list they draw from.
+// ---------------------------------------------------------------------------
+
+/**
+ * "Top picks for you" — discovery, not repeat-visit recommendations.
+ * Deliberately scoped to Want to try only, so restaurants already tried
+ * live in "Go back here" instead of showing up in both places.
+ */
+export function topPicksForYou(
+  restaurants: RestaurantWithDishes[],
+  opts: RankOptions,
+  count = 6
+): RankedRestaurant[] {
+  return rankRestaurants(restaurants, { ...opts, status: 'Want to try' }).slice(0, count);
+}
+
+/** "Worth trying soon" — the untried shortlist we most want to act on. */
+export function worthTryingSoon(
+  restaurants: RestaurantWithDishes[],
+  opts: RankOptions,
+  count = 6
+): RankedRestaurant[] {
+  return rankRestaurants(restaurants, {
+    ...opts,
+    status: 'Want to try',
+    priorities: ['HIGH', 'VERY HIGH'],
+  }).slice(0, count);
+}
+
+/** "Go back here" — Tried restaurants we've said we'd return to. */
+export function goBackHere(
+  restaurants: RestaurantWithDishes[],
+  opts: RankOptions,
+  count = 6
+): RankedRestaurant[] {
+  return rankRestaurants(restaurants, { ...opts, status: 'Tried' })
+    .filter((r) => r.visit_again === 'yes')
+    .slice(0, count);
+}
+
+/**
+ * "Something new" — a single surprise suggestion from the Want-to-try list,
+ * not a plain random pick across all 100+ untried restaurants. Draws from a
+ * pool of the strongest-ranked candidates (priority + any other existing
+ * signal already in rankRestaurants) so HIGH/VERY HIGH restaurants are more
+ * likely to come up, then picks randomly within that pool for variety.
+ * Returns null when there's nothing untried to suggest.
+ */
+export function somethingNew(
+  restaurants: RestaurantWithDishes[],
+  opts: RankOptions,
+  poolSize = 12
+): RankedRestaurant | null {
+  const ranked = rankRestaurants(restaurants, { ...opts, status: 'Want to try' });
+  if (!ranked.length) return null;
+  const pool = ranked.slice(0, Math.min(poolSize, ranked.length));
+  return pool[Math.floor(Math.random() * pool.length)];
+}
