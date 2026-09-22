@@ -2,10 +2,12 @@
 
 import { useMemo, useState } from 'react';
 import { useRestaurants } from '@/lib/useRestaurants';
+import { useRecentVisits, usePeople } from '@/lib/useVisits';
 import { rankRestaurants, type RankedRestaurant } from '@/lib/search';
 import { parseRating } from '@/lib/rating';
 import RestaurantList from '@/components/RestaurantList';
 import RestaurantMiniRow from '@/components/RestaurantMiniRow';
+import VisitMiniRow from '@/components/VisitMiniRow';
 import SectionHeading from '@/components/SectionHeading';
 import BottomNav from '@/components/BottomNav';
 import type { RestaurantWithDishes } from '@/lib/types';
@@ -65,6 +67,8 @@ function DashboardSection({
 
 export default function MyFoodPage() {
   const { restaurants, loading, error } = useRestaurants();
+  const { recent: recentVisits, loading: visitsLoading } = useRecentVisits(DASHBOARD_CAP);
+  const { people } = usePeople();
   const [tab, setTab] = useState<Tab | null>(null);
 
   // Full, ranked lists per category — used both for the dashboard previews
@@ -170,13 +174,25 @@ export default function MyFoodPage() {
 
       {!loading && !error && !tab && (
         <>
-          <DashboardSection
-            title="Recent / Tried"
-            subtitle="Most recently visited first"
-            restaurants={tried.slice(0, DASHBOARD_CAP)}
-            emptyMessage="Nothing marked Tried yet."
-            seeAll={{ count: tried.length, onClick: () => setTab('tried') }}
-          />
+          {/* Sourced from restaurant_visits (Stage 3), not
+              restaurants.last_visited_at — reflects real visit history,
+              including who went and what it was rated on that visit. */}
+          <section className="px-4 mt-7">
+            <SectionHeading title="Recent visits" />
+            {visitsLoading ? (
+              <p className="text-cream-300/50 text-[13px] py-2">Loading…</p>
+            ) : recentVisits.length === 0 ? (
+              <p className="text-cream-300/50 text-[13px] py-2">
+                Log a visit from any restaurant's page to see it here.
+              </p>
+            ) : (
+              <div className="rounded-xl2 bg-forest-800/60 border border-cream-300/10 px-3.5">
+                {recentVisits.map((item) => (
+                  <VisitMiniRow key={item.visit.id} item={item} people={people} />
+                ))}
+              </div>
+            )}
+          </section>
           <DashboardSection
             title="Favourites"
             restaurants={favourites.slice(0, DASHBOARD_CAP)}

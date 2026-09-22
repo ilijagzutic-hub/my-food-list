@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRestaurants } from '@/lib/useRestaurants';
-import { supabase } from '@/lib/supabase';
+import { useRestaurantVisits, usePeople } from '@/lib/useVisits';
 import { markTried, markWantToTry } from '@/lib/actions';
 import type { RestaurantWithDishes, VisitAgain } from '@/lib/types';
 import PriorityBadge from './PriorityBadge';
@@ -11,8 +11,12 @@ import FavouriteToggle from './FavouriteToggle';
 import DishCatalogue from './DishCatalogue';
 import Rating from './Rating';
 import RatingEditor from './RatingEditor';
+import LogVisitSheet from './LogVisitSheet';
+import VisitCard from './VisitCard';
 import BottomNav from './BottomNav';
 import { parseRating } from '@/lib/rating';
+
+const VISITS_INITIAL_CAP = 5;
 
 const VISIT_AGAIN_LABEL: Record<VisitAgain, string> = {
   yes: 'Would go back',
@@ -27,33 +31,42 @@ const VISIT_AGAIN_LABEL: Record<VisitAgain, string> = {
  * directory listing. No hero image infrastructure yet (see header below).
  */
 export default function RestaurantDetail({ id }: { id: number }) {
-  const { restaurants, loading, error } = useRestaurants();
+  const { restaurants, loading, error, reload: reloadRestaurants } = useRestaurants();
   const found = useMemo(() => restaurants.find((r) => r.id === id) || null, [restaurants, id]);
   const [r, setR] = useState<RestaurantWithDishes | null>(found);
   const [showRating, setShowRating] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [visitCount, setVisitCount] = useState<number | null>(null);
+
+  const { visits, reload: reloadVisits } = useRestaurantVisits(id);
+  const { people } = usePeople();
+  const [sheetMode, setSheetMode] = useState<'closed' | 'create' | 'edit'>('closed');
+  const [editingVisitId, setEditingVisitId] = useState<number | null>(null);
+  // null = no manual override yet, so the newest visit is expanded by
+  // default (see effectiveExpandedId below); -1 = the user explicitly
+  // collapsed everything, which null can't represent without falling
+  // straight back to "expand the newest one".
+  const [expandedVisitId, setExpandedVisitId] = useState<number | null>(null);
+  const [showAllVisits, setShowAllVisits] = useState(false);
 
   useEffect(() => {
     setR(found);
   }, [found]);
 
-  // restaurant_visits is Stage 1's empty, additive table — visit logging
-  // itself is a later stage, but the "Our history" section should already
-  // reflect real rows if/when they exist rather than assuming zero.
-  useEffect(() => {
-    let cancelled = false;
-    supabase
-      .from('restaurant_visits')
-      .select('*', { count: 'exact', head: true })
-      .eq('restaurant_id', id)
-      .then(({ count }) => {
-        if (!cancelled) setVisitCount(count ?? 0);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
+  const effectiveExpandedId = expandedVisitId ?? visits[0]?.id ?? null;
+  const visibleVisits = showAllVisits ? visits : visits.slice(0, VISITS_INITIAL_CAP);
+  const latestVisit = visits[0] ?? null;
+
+  async function handleVisitSaved() {
+    setSheetMode('closed');
+    setEditingVisitId(null);
+    setExpandedVisitId(null); // fall back to "newest expanded" default
+    await Promise.all([reloadVisits(), reloadRestaurants()]);
+  }
+
+  async function handleVisitDeleted() {
+    setExpandedVisitId(null);
+    await Promise.all([reloadVisits(), reloadRestaurants()]);
+  }
 
   async function handleToggleTried() {
     if (!r) return;
@@ -133,6 +146,15 @@ export default function RestaurantDetail({ id }: { id: number }) {
         </div>
       </div>
 
+      <section className="px-4 mt-4">
+        <button
+          onClick={() => setSheetMode('create')}
+          className="w-full py-3.5 rounded-xl2 bg-gold-500 text-forest-950 font-semibold text-[14.5px] tap-highlight-none"
+        >
+          + Log a visit
+        </button>
+      </section>
+
       <section className="px-4 mt-6">
         <h2 className="font-serif text-[17px] text-cream-50 mb-2">Why it&apos;s on our list</h2>
         {hasWhyContent ? (
@@ -173,33 +195,63 @@ export default function RestaurantDetail({ id }: { id: number }) {
 
       <section className="px-4 mt-6">
         <h2 className="font-serif text-[17px] text-cream-50 mb-2">Our history</h2>
-        {visitCount === null ? (
-          <p className="text-[13.5px] text-cream-300/40">Checking…</p>
-        ) : visitCount > 0 ? (
-          <p className="text-[13.5px] text-cream-300/70">
-            {visitCount} visit{visitCount === 1 ? '' : 's'} logged.
-          </p>
+        {visits.length === 0 ? (
+          <>
+            <p className="text-[13.5px] text-cream-300/50">No visits logged yet.</p>
+            {/* Legacy pre-Stage-3 rating: only shown while this restaurant has
+                no real visit history, so it's never displayed alongside (and
+                duplicating) a visit card showing the same info. */}
+            {r.status === 'Tried' && (ratingNum != null || r.visit_again || r.last_visited_at) && (
+              <div className="mt-3 p-3.5 rounded-xl bg-forest-800/50 border border-cream-300/10">
+                <p className="text-[11px] uppercase tracking-wide text-cream-300/50 mb-2">
+                  Current rating (from before visit history existed)
+                </p>
+                {ratingNum != null && <Rating value={ratingNum} />}
+                {r.visit_again && (
+                  <p className="text-[13px] text-cream-300/70 mt-2">
+                    {VISIT_AGAIN_LABEL[r.visit_again]}
+                  </p>
+                )}
+                {r.last_visited_at && (
+                  <p className="text-[12px] text-cream-300/50 mt-1">
+                    Last visited {new Date(r.last_visited_at).toLocaleDateString()}
+                  </p>
+                )}
+              </div>
+            )}
+          </>
         ) : (
-          <p className="text-[13.5px] text-cream-300/50">No visits logged yet.</p>
-        )}
-
-        {r.status === 'Tried' && (ratingNum != null || r.visit_again || r.last_visited_at) && (
-          <div className="mt-3 p-3.5 rounded-xl bg-forest-800/50 border border-cream-300/10">
-            <p className="text-[11px] uppercase tracking-wide text-cream-300/50 mb-2">
-              Current rating (from before visit history existed)
+          <>
+            <p className="text-[12.5px] text-cream-300/50 mb-2.5">
+              {visits.length} visit{visits.length === 1 ? '' : 's'}
             </p>
-            {ratingNum != null && <Rating value={ratingNum} />}
-            {r.visit_again && (
-              <p className="text-[13px] text-cream-300/70 mt-2">
-                {VISIT_AGAIN_LABEL[r.visit_again]}
-              </p>
+            <div className="flex flex-col gap-2.5">
+              {visibleVisits.map((v) => (
+                <VisitCard
+                  key={v.id}
+                  visit={v}
+                  people={people}
+                  expanded={effectiveExpandedId === v.id}
+                  onToggle={() =>
+                    setExpandedVisitId((cur) => (cur === v.id ? -1 : v.id))
+                  }
+                  onEdit={() => {
+                    setEditingVisitId(v.id);
+                    setSheetMode('edit');
+                  }}
+                  onDeleted={handleVisitDeleted}
+                />
+              ))}
+            </div>
+            {!showAllVisits && visits.length > VISITS_INITIAL_CAP && (
+              <button
+                onClick={() => setShowAllVisits(true)}
+                className="text-[13px] text-gold-400 tap-highlight-none mt-3"
+              >
+                Show all {visits.length} visits
+              </button>
             )}
-            {r.last_visited_at && (
-              <p className="text-[12px] text-cream-300/50 mt-1">
-                Last visited {new Date(r.last_visited_at).toLocaleDateString()}
-              </p>
-            )}
-          </div>
+          </>
         )}
       </section>
 
@@ -225,10 +277,17 @@ export default function RestaurantDetail({ id }: { id: number }) {
             {r.status === 'Tried' ? 'Mark Want to Try' : 'Mark Tried'}
           </button>
           <button
-            onClick={() => setShowRating(true)}
+            onClick={() => {
+              if (latestVisit) {
+                setEditingVisitId(latestVisit.id);
+                setSheetMode('edit');
+              } else {
+                setShowRating(true);
+              }
+            }}
             className="py-3 rounded-xl bg-gold-500 text-forest-950 font-semibold text-[13.5px] tap-highlight-none"
           >
-            Rate &amp; add notes
+            {latestVisit ? 'Edit latest visit' : 'Rate & add notes'}
           </button>
         </div>
       </section>
@@ -242,6 +301,22 @@ export default function RestaurantDetail({ id }: { id: number }) {
               prev ? { ...prev, rating, user_notes: notes || null, visit_again: visitAgain } : prev
             )
           }
+        />
+      )}
+
+      {sheetMode !== 'closed' && (
+        <LogVisitSheet
+          restaurantId={r.id}
+          restaurantDishes={r.dishes}
+          people={people}
+          editingVisit={
+            sheetMode === 'edit' ? visits.find((v) => v.id === editingVisitId) ?? null : null
+          }
+          onClose={() => {
+            setSheetMode('closed');
+            setEditingVisitId(null);
+          }}
+          onSaved={handleVisitSaved}
         />
       )}
 

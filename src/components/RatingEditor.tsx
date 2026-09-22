@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { saveRatingAndNotes } from '@/lib/actions';
 import { parseRating, formatRating } from '@/lib/rating';
+import RatingPicker from './RatingPicker';
 import type { RestaurantWithDishes, VisitAgain } from '@/lib/types';
 
 const VISIT_AGAIN_OPTIONS: { value: VisitAgain; label: string }[] = [
@@ -10,13 +11,6 @@ const VISIT_AGAIN_OPTIONS: { value: VisitAgain; label: string }[] = [
   { value: 'maybe', label: 'Maybe' },
   { value: 'no', label: 'No' },
 ];
-
-// restaurants.rating is a 0–10 scale (DB check constraint). The picker
-// below writes whole numbers 1–10 directly into that column — no more
-// 1–5 star taps silently becoming an n/10 score. An existing decimal
-// rating (e.g. from data entered before this UI existed) is left alone
-// unless the user actually taps a new value.
-const RATING_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 export default function RatingEditor({
   restaurant,
@@ -68,22 +62,8 @@ export default function RatingEditor({
             <span className="text-[13px] font-medium text-gold-400">{formatRating(rating)}</span>
           )}
         </div>
-        <div className="grid grid-cols-5 gap-2 mb-5">
-          {RATING_VALUES.map((n) => (
-            <button
-              key={n}
-              onClick={() => setRating(n === rating ? null : n)}
-              aria-label={`Rate ${n} out of 10`}
-              aria-pressed={rating === n}
-              className={`py-2.5 rounded-lg text-[14px] font-medium tap-highlight-none border ${
-                rating != null && n <= rating
-                  ? 'bg-gold-500 border-gold-500 text-forest-950'
-                  : 'bg-forest-900 border-cream-300/15 text-cream-100'
-              }`}
-            >
-              {n}
-            </button>
-          ))}
+        <div className="mb-5">
+          <RatingPicker value={rating} onChange={setRating} />
         </div>
 
         <p className="text-xs uppercase tracking-wide text-cream-300/60 mb-2">Go back again?</p>
