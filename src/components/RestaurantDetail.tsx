@@ -9,9 +9,10 @@ import type { RestaurantWithDishes, VisitAgain } from '@/lib/types';
 import PriorityBadge from './PriorityBadge';
 import FavouriteToggle from './FavouriteToggle';
 import DishCatalogue from './DishCatalogue';
-import RatingStars from './RatingStars';
+import Rating from './Rating';
 import RatingEditor from './RatingEditor';
 import BottomNav from './BottomNav';
+import { parseRating } from '@/lib/rating';
 
 const VISIT_AGAIN_LABEL: Record<VisitAgain, string> = {
   yes: 'Would go back',
@@ -96,8 +97,7 @@ export default function RestaurantDetail({ id }: { id: number }) {
     );
   }
 
-  const ratingNum =
-    typeof r.rating === 'number' ? r.rating : r.rating ? parseFloat(String(r.rating)) : null;
+  const ratingNum = parseRating(r.rating);
   const hasWhyContent =
     !!r.summary || !!r.source_notes || !!r.tags?.length || !!r.occasions?.length;
 
@@ -188,7 +188,7 @@ export default function RestaurantDetail({ id }: { id: number }) {
             <p className="text-[11px] uppercase tracking-wide text-cream-300/50 mb-2">
               Current rating (from before visit history existed)
             </p>
-            {ratingNum != null && <RatingStars value={ratingNum} />}
+            {ratingNum != null && <Rating value={ratingNum} />}
             {r.visit_again && (
               <p className="text-[13px] text-cream-300/70 mt-2">
                 {VISIT_AGAIN_LABEL[r.visit_again]}

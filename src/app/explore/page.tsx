@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRestaurants } from '@/lib/useRestaurants';
-import { rankRestaurants } from '@/lib/search';
+import { rankRestaurants, sortRestaurants, SORT_OPTIONS, type SortKey } from '@/lib/search';
 import type { Coords } from '@/lib/types';
 import RestaurantList from '@/components/RestaurantList';
 import LocationInput from '@/components/LocationInput';
@@ -15,6 +15,18 @@ interface QuickView {
   needsLocation?: boolean;
 }
 
+// Only the 4 filters people reach for constantly stay visible as chips.
+// Priority, cuisine, occasion and venue type are still fully available —
+// they live behind the Filters button (FilterSheet) instead of adding to
+// a permanent row that used to grow to 12+ chips (every casual/date
+// occasion, plus the top 6 cuisines).
+const QUICK_VIEWS: QuickView[] = [
+  { label: 'Near Me', apply: (f) => f, needsLocation: true },
+  { label: 'Favourites', apply: (f) => f },
+  { label: 'Tried', apply: (f) => ({ ...f, status: 'Tried' }) },
+  { label: 'Want to try', apply: (f) => ({ ...f, status: 'Want to try' }) },
+];
+
 export default function ExplorePage() {
   const { restaurants, loading, error } = useRestaurants();
   const [query, setQuery] = useState('');
@@ -24,47 +36,28 @@ export default function ExplorePage() {
   const [favouritesOnly, setFavouritesOnly] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [activeQuickView, setActiveQuickView] = useState<string | null>(null);
+  const [sort, setSort] = useState<SortKey>('recommended');
 
   const facets = useMemo(() => {
     const cuisines = new Set<string>();
     const venueTypes = new Set<string>();
     const occasions = new Set<string>();
-    const cuisineCounts = new Map<string, number>();
     restaurants.forEach((r) => {
-      (r.cuisine || []).forEach((c) => {
-        cuisines.add(c);
-        cuisineCounts.set(c, (cuisineCounts.get(c) || 0) + 1);
-      });
+      (r.cuisine || []).forEach((c) => cuisines.add(c));
       (r.venue_type || []).forEach((v) => venueTypes.add(v));
       (r.occasions || []).forEach((o) => occasions.add(o));
     });
-    const topCuisines = Array.from(cuisineCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 6)
-      .map(([c]) => c);
     return {
       cuisines: Array.from(cuisines).sort(),
       venueTypes: Array.from(venueTypes).sort(),
       occasions: Array.from(occasions).sort(),
-      topCuisines,
     };
   }, [restaurants]);
 
-  const quickViews: QuickView[] = useMemo(() => {
-    const views: QuickView[] = [
-      { label: 'Favourites', apply: (f) => f },
-      { label: 'Very High Priority', apply: (f) => ({ ...f, priorities: ['VERY HIGH'] }) },
-      { label: 'Near Me', apply: (f) => f, needsLocation: true },
-      { label: 'Tried', apply: (f) => ({ ...f, status: 'Tried' }) },
-    ];
-    facets.occasions
-      .filter((o) => /date/i.test(o) || /casual/i.test(o))
-      .forEach((o) => views.push({ label: o, apply: (f) => ({ ...f, occasions: [o] }) }));
-    facets.topCuisines.forEach((c) =>
-      views.push({ label: c, apply: (f) => ({ ...f, cuisines: [c] }) })
-    );
-    return views;
-  }, [facets]);
+  // Nearest only means anything once we can actually compute a distance.
+  useEffect(() => {
+    if (sort === 'nearest' && !coords) setSort('recommended');
+  }, [sort, coords]);
 
   function selectQuickView(qv: QuickView) {
     if (activeQuickView === qv.label) {
@@ -98,22 +91,24 @@ export default function ExplorePage() {
       setFavouritesOnly(true);
       setActiveQuickView('Favourites');
     } else if (priority) {
+      // No visible chip for this any more (priority now lives behind
+      // Filters) — the filter itself still applies; the Filters button's
+      // "(1)" count reflects it.
       setFilters((f) => ({ ...f, priorities: [priority] }));
-      setActiveQuickView('Very High Priority');
     } else if (occasionGroup === 'casual') {
       const matches = facets.occasions.filter((o) => /casual/i.test(o));
       if (matches.length) setFilters((f) => ({ ...f, occasions: matches }));
     } else if (occasion) {
+      // No visible chip for a specific occasion any more — same reasoning
+      // as priority above.
       setFilters((f) => ({ ...f, occasions: [occasion] }));
-      const matchingChip = facets.occasions.find((o) => o === occasion);
-      if (matchingChip) setActiveQuickView(matchingChip);
     } else if (near) {
       setActiveQuickView('Near Me');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facets.occasions.length]);
 
-  const results = useMemo(
+  const ranked = useMemo(
     () =>
       rankRestaurants(
         favouritesOnly ? restaurants.filter((r) => r.is_favourite) : restaurants,
@@ -130,6 +125,8 @@ export default function ExplorePage() {
       ),
     [restaurants, query, coords, filters, favouritesOnly]
   );
+
+  const results = useMemo(() => sortRestaurants(ranked, sort), [ranked, sort]);
 
   const activeFilterCount =
     filters.cuisines.length +
@@ -166,7 +163,7 @@ export default function ExplorePage() {
 
       <section className="mt-3">
         <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 pb-1">
-          {quickViews.map((qv) => (
+          {QUICK_VIEWS.map((qv) => (
             <button
               key={qv.label}
               onClick={() => selectQuickView(qv)}
@@ -195,9 +192,23 @@ export default function ExplorePage() {
       )}
 
       <section className="px-4 mt-5">
-        <p className="text-[12.5px] text-cream-300/50 mb-2.5">
-          {results.length} restaurant{results.length === 1 ? '' : 's'}
-        </p>
+        <div className="flex items-center justify-between gap-3 mb-2.5">
+          <p className="text-[12.5px] text-cream-300/50">
+            {results.length} restaurant{results.length === 1 ? '' : 's'}
+          </p>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortKey)}
+            aria-label="Sort by"
+            className="bg-forest-800/70 border border-cream-300/15 rounded-full pl-3 pr-2 py-1.5 text-[12.5px] text-cream-100 focus:outline-none focus:border-gold-500/50"
+          >
+            {SORT_OPTIONS.filter((opt) => !opt.needsLocation || coords).map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
         {loading && (
           <p className="text-cream-300/50 text-sm py-8 text-center">Loading your list…</p>
         )}

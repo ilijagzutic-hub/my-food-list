@@ -1,27 +1,24 @@
 import type { Priority } from '@/lib/types';
 
+// Text-only badge — the gold star icon is reserved for Favourite, so
+// priority is never shown as a star (it used to share the same icon as
+// FavouriteToggle, which is what made the two concepts read as one thing).
 const CONFIG: Record<string, { label: string; className: string }> = {
-  'VERY HIGH': { label: 'Very High', className: 'text-gold-400' },
-  HIGH: { label: 'High', className: 'text-cream-100' },
-  NORMAL: { label: 'Normal', className: 'text-cream-300/70' },
-  LOW: { label: 'Low', className: 'text-cream-300/50' },
+  'VERY HIGH': {
+    label: 'Very High',
+    className: 'bg-gold-500/15 text-gold-400 border-gold-500/30',
+  },
+  HIGH: { label: 'High', className: 'bg-cream-300/10 text-cream-100 border-cream-300/20' },
+  NORMAL: { label: 'Normal', className: 'text-cream-300/60 border-cream-300/15' },
+  LOW: { label: 'Low', className: 'text-cream-300/40 border-cream-300/10' },
 };
 
 export default function PriorityBadge({ priority }: { priority: Priority | null }) {
   const cfg = CONFIG[priority || 'NORMAL'] || CONFIG.NORMAL;
-  const filled = priority === 'VERY HIGH' || priority === 'HIGH';
   return (
-    <span className={`inline-flex items-center gap-1 text-[13px] font-medium ${cfg.className}`}>
-      <svg
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill={filled ? 'currentColor' : 'none'}
-        stroke="currentColor"
-        strokeWidth="1.6"
-      >
-        <path d="M12 2.5l2.9 6.1 6.6.7-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.1 1.3-6.6-4.9-4.6 6.6-.7L12 2.5z" />
-      </svg>
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-medium uppercase tracking-wide ${cfg.className}`}
+    >
       {cfg.label}
     </span>
   );

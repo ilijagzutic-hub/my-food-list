@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { saveRatingAndNotes } from '@/lib/actions';
+import { parseRating, formatRating } from '@/lib/rating';
 import type { RestaurantWithDishes, VisitAgain } from '@/lib/types';
 
 const VISIT_AGAIN_OPTIONS: { value: VisitAgain; label: string }[] = [
@@ -9,6 +10,13 @@ const VISIT_AGAIN_OPTIONS: { value: VisitAgain; label: string }[] = [
   { value: 'maybe', label: 'Maybe' },
   { value: 'no', label: 'No' },
 ];
+
+// restaurants.rating is a 0–10 scale (DB check constraint). The picker
+// below writes whole numbers 1–10 directly into that column — no more
+// 1–5 star taps silently becoming an n/10 score. An existing decimal
+// rating (e.g. from data entered before this UI existed) is left alone
+// unless the user actually taps a new value.
+const RATING_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 export default function RatingEditor({
   restaurant,
@@ -19,12 +27,7 @@ export default function RatingEditor({
   onClose: () => void;
   onSaved: (rating: number | null, notes: string, visitAgain: VisitAgain | null) => void;
 }) {
-  const initialRating =
-    typeof restaurant.rating === 'number'
-      ? restaurant.rating
-      : restaurant.rating
-      ? parseFloat(String(restaurant.rating))
-      : null;
+  const initialRating = parseRating(restaurant.rating);
   const [rating, setRating] = useState<number | null>(initialRating);
   const [notes, setNotes] = useState(restaurant.user_notes || '');
   const [visitAgain, setVisitAgain] = useState<VisitAgain | null>(restaurant.visit_again);
@@ -59,26 +62,26 @@ export default function RatingEditor({
         <div className="w-10 h-1 bg-cream-300/20 rounded-full mx-auto mb-4" />
         <h3 className="font-serif text-lg text-cream-50 mb-4">{restaurant.name}</h3>
 
-        <p className="text-xs uppercase tracking-wide text-cream-300/60 mb-2">Your rating</p>
-        <div className="flex gap-1.5 mb-5">
-          {[1, 2, 3, 4, 5].map((n) => (
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs uppercase tracking-wide text-cream-300/60">Your rating</p>
+          {rating != null && (
+            <span className="text-[13px] font-medium text-gold-400">{formatRating(rating)}</span>
+          )}
+        </div>
+        <div className="grid grid-cols-5 gap-2 mb-5">
+          {RATING_VALUES.map((n) => (
             <button
               key={n}
               onClick={() => setRating(n === rating ? null : n)}
-              className="p-1 tap-highlight-none"
-              aria-label={`Rate ${n} star${n > 1 ? 's' : ''}`}
+              aria-label={`Rate ${n} out of 10`}
+              aria-pressed={rating === n}
+              className={`py-2.5 rounded-lg text-[14px] font-medium tap-highlight-none border ${
+                rating != null && n <= rating
+                  ? 'bg-gold-500 border-gold-500 text-forest-950'
+                  : 'bg-forest-900 border-cream-300/15 text-cream-100'
+              }`}
             >
-              <svg
-                width="26"
-                height="26"
-                viewBox="0 0 24 24"
-                fill={rating != null && n <= rating ? '#d4af6a' : 'none'}
-                stroke={rating != null && n <= rating ? '#d4af6a' : '#e8d9b5'}
-                strokeOpacity={rating != null && n <= rating ? 1 : 0.4}
-                strokeWidth="1.6"
-              >
-                <path d="M12 2.5l2.9 6.1 6.6.7-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.1 1.3-6.6-4.9-4.6 6.6-.7L12 2.5z" />
-              </svg>
+              {n}
             </button>
           ))}
         </div>

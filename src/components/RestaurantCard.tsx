@@ -5,11 +5,12 @@ import Link from 'next/link';
 import type { RestaurantWithDishes, VisitAgain } from '@/lib/types';
 import PriorityBadge from './PriorityBadge';
 import RatingEditor from './RatingEditor';
-import RatingStars from './RatingStars';
+import Rating from './Rating';
 import DishCatalogue from './DishCatalogue';
 import FavouriteToggle from './FavouriteToggle';
 import { markTried, markWantToTry } from '@/lib/actions';
 import { formatDistance } from '@/lib/geo';
+import { parseRating } from '@/lib/rating';
 
 const VISIT_AGAIN_LABEL: Record<VisitAgain, string> = {
   yes: 'Would go back',
@@ -30,12 +31,17 @@ function websiteSearchUrl(r: RestaurantWithDishes) {
   return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
 }
 
-function oneLineHighlight(r: RestaurantWithDishes): string {
+/**
+ * The collapsed card's one-line "why go" hint. "Go for: …" is only used
+ * when there's an actual dish backing it — a plain summary/description
+ * doesn't get that prefix, since it isn't naming something to order.
+ */
+function keyHighlight(r: RestaurantWithDishes): { text: string; isDish: boolean } | null {
   const mustOrder = r.dishes.filter((d) => d.must_order).map((d) => d.name);
-  if (mustOrder.length) return mustOrder.slice(0, 3).join(', ') + '.';
-  if (r.dishes.length) return r.dishes.slice(0, 3).map((d) => d.name).join(', ') + '.';
-  if (r.summary) return r.summary;
-  return (r.cuisine || []).join(', ') || (r.venue_type || []).join(', ') || '';
+  if (mustOrder.length) return { text: mustOrder.slice(0, 2).join(', '), isDish: true };
+  if (r.dishes.length) return { text: r.dishes.slice(0, 2).map((d) => d.name).join(', '), isDish: true };
+  if (r.summary) return { text: r.summary, isDish: false };
+  return null;
 }
 
 export default function RestaurantCard({
@@ -51,8 +57,8 @@ export default function RestaurantCard({
   const [showRating, setShowRating] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const ratingNum =
-    typeof r.rating === 'number' ? r.rating : r.rating ? parseFloat(String(r.rating)) : null;
+  const ratingNum = parseRating(r.rating);
+  const highlight = keyHighlight(r);
 
   async function handleToggleTried() {
     setBusy(true);
@@ -118,7 +124,9 @@ export default function RestaurantCard({
           </div>
         </div>
         <div className="flex items-center gap-2 text-[13px] text-cream-300/70">
-          <span>{r.suburb || r.city || r.region}</span>
+          <span>
+            {[r.cuisine?.[0], r.suburb || r.city || r.region].filter(Boolean).join(' · ')}
+          </span>
           {r.distanceKm != null && (
             <>
               <span className="text-cream-300/30">·</span>
@@ -126,9 +134,10 @@ export default function RestaurantCard({
             </>
           )}
         </div>
-        {oneLineHighlight(r) && (
+        {highlight && (
           <p className="text-[13.5px] text-cream-100/80 mt-0.5 line-clamp-1">
-            {oneLineHighlight(r)}
+            {highlight.isDish && <span className="text-cream-300/55">Go for: </span>}
+            {highlight.text}
           </p>
         )}
         <div className="mt-1">
@@ -146,9 +155,6 @@ export default function RestaurantCard({
                 <span>{r.venue_type.join(', ')}</span>
               </>
             ) : null}
-          </div>
-          <div className="mt-2">
-            <PriorityBadge priority={r.priority} />
           </div>
 
           <div className="mt-4">
@@ -173,7 +179,7 @@ export default function RestaurantCard({
 
           {ratingNum != null && (
             <div className="mt-4">
-              <RatingStars value={ratingNum} />
+              <Rating value={ratingNum} label="Your rating" />
             </div>
           )}
 

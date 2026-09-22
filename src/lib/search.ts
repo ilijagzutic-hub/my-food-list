@@ -1,11 +1,22 @@
 import type { Coords, RestaurantWithDishes } from './types';
 import { haversineKm } from './geo';
+import { parseRating } from './rating';
 
 const PRIORITY_WEIGHT: Record<string, number> = {
   'VERY HIGH': 3,
   HIGH: 2,
   NORMAL: 1,
   LOW: 0.3,
+};
+
+// A plain tier rank (not the blended score) for sorts/rails that need to
+// order by priority first, deterministically — e.g. "Want to try" and the
+// Explore "Priority" sort.
+const PRIORITY_RANK: Record<string, number> = {
+  'VERY HIGH': 4,
+  HIGH: 3,
+  NORMAL: 2,
+  LOW: 1,
 };
 
 // Light synonym expansion so common cravings surface good matches even when
@@ -172,17 +183,32 @@ export function topPicksForYou(
   return rankRestaurants(restaurants, { ...opts, status: 'Want to try' }).slice(0, count);
 }
 
-/** "Worth trying soon" — the untried shortlist we most want to act on. */
-export function worthTryingSoon(
+/**
+ * "Want to try" — everything else on the Want-to-try list, deliberately
+ * excluding whatever "Top picks for you" is already showing so the two
+ * rails don't just repeat each other in a different order. Ordered by
+ * priority tier first, then the existing recommendation score, then id as
+ * a stable, deterministic fallback.
+ */
+export function wantToTryRail(
   restaurants: RestaurantWithDishes[],
   opts: RankOptions,
   count = 6
 ): RankedRestaurant[] {
-  return rankRestaurants(restaurants, {
-    ...opts,
-    status: 'Want to try',
-    priorities: ['HIGH', 'VERY HIGH'],
-  }).slice(0, count);
+  const shownInTopPicks = new Set(
+    topPicksForYou(restaurants, opts, count).map((r) => r.id)
+  );
+  const pool = rankRestaurants(restaurants, { ...opts, status: 'Want to try' }).filter(
+    (r) => !shownInTopPicks.has(r.id)
+  );
+  pool.sort((a, b) => {
+    const byPriority =
+      (PRIORITY_RANK[b.priority || 'NORMAL'] ?? 0) - (PRIORITY_RANK[a.priority || 'NORMAL'] ?? 0);
+    if (byPriority !== 0) return byPriority;
+    if (b._score !== a._score) return b._score - a._score;
+    return a.id - b.id;
+  });
+  return pool.slice(0, count);
 }
 
 /** "Go back here" — Tried restaurants we've said we'd return to. */
@@ -213,4 +239,58 @@ export function somethingNew(
   if (!ranked.length) return null;
   const pool = ranked.slice(0, Math.min(poolSize, ranked.length));
   return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// ---------------------------------------------------------------------------
+// Explore sorting. Each option only uses data that actually exists — there's
+// no "recently visited" sort, for example, because last_visited_at is null
+// for almost everything (see visit history in a later stage). There's also
+// no "recently added" sort: 91 of 112 restaurants (81%) share a created_at
+// within the first two days after the Stage 1 bulk import, so that column
+// reflects import-batch order, not a meaningful "when I added this to my
+// list" date — sorting by it would mostly just replay the migration script.
+// Applied after rankRestaurants, so filtering/scoring stays in one place;
+// sort only reorders the already-filtered list.
+// ---------------------------------------------------------------------------
+
+export type SortKey = 'recommended' | 'nearest' | 'rating' | 'priority';
+
+export const SORT_OPTIONS: { value: SortKey; label: string; needsLocation?: boolean }[] = [
+  { value: 'recommended', label: 'Recommended' },
+  { value: 'nearest', label: 'Nearest', needsLocation: true },
+  { value: 'rating', label: 'Highest rated' },
+  { value: 'priority', label: 'Priority' },
+];
+
+export function sortRestaurants(list: RankedRestaurant[], key: SortKey): RankedRestaurant[] {
+  const arr = [...list];
+  switch (key) {
+    case 'nearest':
+      return arr.sort((a, b) => {
+        if (a.distanceKm == null && b.distanceKm == null) return 0;
+        if (a.distanceKm == null) return 1;
+        if (b.distanceKm == null) return -1;
+        return a.distanceKm - b.distanceKm;
+      });
+    case 'rating':
+      return arr.sort((a, b) => {
+        const ra = parseRating(a.rating);
+        const rb = parseRating(b.rating);
+        if (ra == null && rb == null) return 0;
+        if (ra == null) return 1;
+        if (rb == null) return -1;
+        return rb - ra;
+      });
+    case 'priority':
+      return arr.sort((a, b) => {
+        const byPriority =
+          (PRIORITY_RANK[b.priority || 'NORMAL'] ?? 0) -
+          (PRIORITY_RANK[a.priority || 'NORMAL'] ?? 0);
+        if (byPriority !== 0) return byPriority;
+        return b._score - a._score;
+      });
+    case 'recommended':
+    default:
+      return arr;
+  }
 }

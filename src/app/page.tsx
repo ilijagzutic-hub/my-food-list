@@ -5,7 +5,7 @@ import { useRestaurants } from '@/lib/useRestaurants';
 import {
   rankRestaurants,
   topPicksForYou,
-  worthTryingSoon,
+  wantToTryRail,
   goBackHere,
   somethingNew,
   type RankedRestaurant,
@@ -83,8 +83,8 @@ export default function HomePage() {
     () => topPicksForYou(restaurants, { coords }),
     [restaurants, coords]
   );
-  const worthTrying = useMemo(
-    () => worthTryingSoon(restaurants, { coords }),
+  const wantToTry = useMemo(
+    () => wantToTryRail(restaurants, { coords }),
     [restaurants, coords]
   );
   const goBack = useMemo(() => goBackHere(restaurants, { coords }), [restaurants, coords]);
@@ -189,10 +189,10 @@ export default function HomePage() {
             emptyMessage="Add a few more Want to Try spots to see picks here."
           />
           <Rail
-            title="Worth trying soon"
-            subtitle="Your HIGH / VERY HIGH priority untried spots"
-            restaurants={worthTrying}
-            emptyMessage="Nothing marked HIGH or VERY HIGH priority yet."
+            title="Want to try"
+            subtitle="Everything else on your list"
+            restaurants={wantToTry}
+            emptyMessage="Everything on your Want to Try list is already above."
           />
           <Rail
             title="Go back here"
