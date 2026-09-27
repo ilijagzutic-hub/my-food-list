@@ -76,3 +76,16 @@ body {
     max-height: 800px;
   }
 }
+
+/* Stage 5B: light-touch Leaflet polish so the map's default chrome sits
+   inside the app's rounded, editorial look instead of looking bolted on.
+   Marker/user-location styling itself lives inline in RestaurantMap.tsx. */
+.leaflet-popup-content-wrapper {
+  border-radius: 14px;
+}
+.leaflet-popup-content {
+  margin: 12px 14px;
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: rgba(10, 26, 18, 0.5);
+}

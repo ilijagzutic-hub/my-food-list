@@ -3,14 +3,13 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-// Home | Explore | My Food for now. Map is intentionally not shown yet —
-// our coordinate data isn't reliable enough (see the V2 feasibility audit).
-// This array is the only thing that needs to grow when Map is ready: add
-// { href: '/map/', label: 'Map', icon: '...' } and the flex-1 layout below
+// Stage 5B: Map added now that Stage 5A has verified address-level
+// coordinates for the restaurants that support it. The flex-1 layout below
 // divides evenly across however many tabs exist, no other changes needed.
 const TABS = [
   { href: '/', label: 'Home', icon: '🍽️' },
   { href: '/explore/', label: 'Explore', icon: '🧭' },
+  { href: '/map/', label: 'Map', icon: '🗺️' },
   { href: '/my-food/', label: 'My Food', icon: '📒' },
 ];
 
