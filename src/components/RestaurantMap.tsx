@@ -72,12 +72,14 @@ function withOffsets(restaurants: RankedRestaurant[]): Map<number, LatLngTuple> 
   return positions;
 }
 
-function FitToData({ restaurants }: { restaurants: RankedRestaurant[] }) {
+function FitToData({ restaurants, skip }: { restaurants: RankedRestaurant[]; skip: boolean }) {
   const map = useMap();
   const didFit = useRef(false);
 
   useEffect(() => {
-    if (didFit.current || restaurants.length === 0) return;
+    // Skipped when a focus id is present (Stage 6A's "Show on map") —
+    // FocusOnRestaurant owns the initial view in that case instead.
+    if (didFit.current || restaurants.length === 0 || skip) return;
     didFit.current = true;
     // The list genuinely includes a handful of overseas restaurants (real
     // trips, real addresses) alongside ~100+ Sydney-area ones. Framing the
@@ -91,7 +93,35 @@ function FitToData({ restaurants }: { restaurants: RankedRestaurant[] }) {
     const pool = domestic.length > 0 ? domestic : restaurants;
     const bounds = L.latLngBounds(pool.map((r) => [r.latitude!, r.longitude!] as LatLngTuple));
     map.fitBounds(bounds, { padding: [32, 32], maxZoom: 15 });
-  }, [restaurants, map]);
+  }, [restaurants, map, skip]);
+
+  return null;
+}
+
+/** Stage 6A "Show on map": centres on one restaurant and opens its popup,
+ * reusing the Map infrastructure rather than a separate mini-map. */
+function FocusOnRestaurant({
+  restaurants,
+  focusId,
+  markerRefs,
+}: {
+  restaurants: RankedRestaurant[];
+  focusId: number | null;
+  markerRefs: React.MutableRefObject<Map<number, L.Marker>>;
+}) {
+  const map = useMap();
+  const didFocus = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (focusId == null || didFocus.current === focusId) return;
+    const r = restaurants.find((x) => x.id === focusId);
+    if (!r || r.latitude == null || r.longitude == null) return;
+    didFocus.current = focusId;
+    map.setView([r.latitude, r.longitude], 16, { animate: true });
+    // The marker needs a beat to exist/attach before openPopup() works.
+    const t = setTimeout(() => markerRefs.current.get(focusId)?.openPopup(), 120);
+    return () => clearTimeout(t);
+  }, [focusId, restaurants, map, markerRefs]);
 
   return null;
 }
@@ -127,12 +157,15 @@ export default function RestaurantMap({
   restaurants,
   userCoords,
   onBoundsChange,
+  focusId = null,
 }: {
   restaurants: RankedRestaurant[];
   userCoords: Coords | null;
   onBoundsChange: (bounds: LatLngBounds) => void;
+  focusId?: number | null;
 }) {
   const positions = useMemo(() => withOffsets(restaurants), [restaurants]);
+  const markerRefs = useRef<Map<number, L.Marker>>(new Map());
 
   return (
     <MapContainer
@@ -153,9 +186,10 @@ export default function RestaurantMap({
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
-      <FitToData restaurants={restaurants} />
+      <FitToData restaurants={restaurants} skip={focusId != null} />
       <FlyToUser coords={userCoords} />
       <BoundsWatcher onChange={onBoundsChange} />
+      <FocusOnRestaurant restaurants={restaurants} focusId={focusId} markerRefs={markerRefs} />
 
       {userCoords && (
         <Marker position={[userCoords.lat, userCoords.lon]} icon={USER_ICON} />
@@ -165,7 +199,15 @@ export default function RestaurantMap({
         const pos = positions.get(r.id);
         if (!pos) return null;
         return (
-          <Marker key={r.id} position={pos} icon={markerIcon(r.status, r.is_favourite)}>
+          <Marker
+            key={r.id}
+            position={pos}
+            icon={markerIcon(r.status, r.is_favourite)}
+            ref={(m) => {
+              if (m) markerRefs.current.set(r.id, m);
+              else markerRefs.current.delete(r.id);
+            }}
+          >
             <Popup>
               <MapPopupCard restaurant={r} />
             </Popup>

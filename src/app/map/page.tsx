@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { LatLngBounds } from 'leaflet';
 import { useRestaurants } from '@/lib/useRestaurants';
@@ -35,6 +35,17 @@ export default function MapPage() {
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [bounds, setBounds] = useState<LatLngBounds | null>(null);
+  const [focusId, setFocusId] = useState<number | null>(null);
+
+  // Stage 6A's "Show on map" hands off with ?focus=<id> — plain browser
+  // API, same reasoning as Explore/Pick: no Suspense boundary needed under
+  // static export.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const raw = new URLSearchParams(window.location.search).get('focus');
+    const id = raw ? Number(raw) : NaN;
+    if (Number.isFinite(id)) setFocusId(id);
+  }, []);
 
   const facets = useMemo(() => {
     const cuisines = new Set<string>();
@@ -208,7 +219,12 @@ export default function MapPage() {
           {/* Map stays mounted (just hidden) in List view so zoom/pan/bounds
               survive switching back, instead of re-fitting from scratch. */}
           <div className={`absolute inset-0 ${view === 'map' ? '' : 'invisible pointer-events-none'}`}>
-            <RestaurantMap restaurants={mappable} userCoords={userCoords} onBoundsChange={setBounds} />
+            <RestaurantMap
+              restaurants={mappable}
+              userCoords={userCoords}
+              onBoundsChange={setBounds}
+              focusId={focusId}
+            />
 
             <button
               onClick={handleNearMe}

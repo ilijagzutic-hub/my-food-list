@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRestaurants } from '@/lib/useRestaurants';
 import {
   rankRestaurants,
@@ -103,6 +104,23 @@ export default function HomePage() {
           Where should I eat?
         </h1>
       </header>
+
+      <section className="px-4 mt-4">
+        <Link
+          href="/pick/"
+          className="flex items-center justify-between gap-3 px-5 py-4 rounded-xl2 bg-gold-500 text-forest-950 tap-highlight-none"
+        >
+          <div>
+            <p className="font-serif text-[18px] leading-tight">🎲 Pick for me</p>
+            <p className="text-[12.5px] text-forest-900/70 mt-0.5">
+              A few quick taps → 3 saved places worth eating at
+            </p>
+          </div>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0">
+            <path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </Link>
+      </section>
 
       <section className="px-4 mt-5">
         <label className="text-xs uppercase tracking-wide text-cream-300/50 mb-2 block">
