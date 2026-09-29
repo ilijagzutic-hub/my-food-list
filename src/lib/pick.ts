@@ -28,7 +28,8 @@ export type ReasonCode =
   | 'would_return'
   | 'something_new'
   | 'known_for_dish'
-  | 'high_interest';
+  | 'high_interest'
+  | 'really_want_to_try';
 
 export type WhereMode = 'near' | 'area' | 'anywhere';
 export type NewOrRepeat = 'new' | 'repeat' | 'either';
@@ -180,13 +181,17 @@ const PRIORITY_WEIGHT: Record<string, number> = {
  * Scores restaurants that have ALREADY passed applyHardConstraints. Signal
  * weights are deliberately tiered — see Stage 6A's brief:
  *   Strong:   proximity, exact cuisine (already guaranteed true here),
- *             food/tag match, occasion match
+ *             food/tag match, occasion match, Really Want to Try (Stage 6B)
  *   Moderate: favourite, personal rating, visit_again, known-for dishes
  *   Light:    priority, other catalogue/research signals
  * priority and known_for/must_order are catalogue/research signals, not
  * personal ones — they stay in the "light" tier on purpose, so a VERY HIGH
  * priority place never outranks somewhere Ilija or Yarra actually rated
- * highly or said they'd go back to.
+ * highly or said they'd go back to. really_want_to_try (Stage 6B) is a
+ * genuine personal signal, weighted well above priority's max — but only
+ * for a still-Want-to-try restaurant, so it never fires under "Go back
+ * somewhere" (which hard-filters to Tried anyway) or for a place already
+ * visited.
  */
 export function scoreCandidates(eligible: EligibleRestaurant[], answers: PickAnswers): ScoredPick[] {
   const scored = eligible.map((r): ScoredPick => {
@@ -231,6 +236,15 @@ export function scoreCandidates(eligible: EligibleRestaurant[], answers: PickAns
     if (knownFor.length > 0) {
       reasons.push('known_for_dish');
       score += 3;
+    }
+    // Stage 6B: a genuine "we really want to go here" signal — only
+    // meaningful for a restaurant not yet tried (r.status === 'Want to
+    // try' already excludes anything 'repeat' mode would have hard-
+    // filtered to Tried-only, so this never fires there). Weighted well
+    // above priority's max (2) on purpose.
+    if (r.really_want_to_try && r.status === 'Want to try') {
+      reasons.push('really_want_to_try');
+      score += 9;
     }
     if (answers.newOrRepeat === 'new' && r.status === 'Want to try') {
       reasons.push('something_new');
@@ -289,6 +303,9 @@ export function explainPick(picked: ScoredPick, answers: PickAnswers): string {
   if (has('occasion_match')) {
     const label = OCCASION_OPTIONS.find((o) => o.key === answers.occasion)?.label;
     if (label) phrases.push(`good for ${label.toLowerCase()}`);
+  }
+  if (has('really_want_to_try')) {
+    phrases.push("you've marked this as somewhere you really want to try");
   }
   if (has('would_return')) phrases.push("you said you'd go back");
   if (has('highly_rated')) {

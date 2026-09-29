@@ -1,9 +1,8 @@
 'use client';
 
-// The one 1-10 whole-number rating control, shared by RatingEditor
-// (restaurant-level legacy rating) and LogVisitSheet (per-visit rating) —
-// Stage 3 must use "the same 1–10 whole-number interaction already
-// established in Stage 2.1", not a lookalike copy.
+// The one 1-10 whole-number rating control, shared by FastVisitSheet and
+// LogVisitSheet (both save a per-visit rating through the same save_visit
+// RPC — see Stage 3/6B) — never a lookalike copy of this interaction.
 const RATING_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 export default function RatingPicker({

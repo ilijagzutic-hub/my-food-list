@@ -4,13 +4,16 @@ import { useState } from 'react';
 import Link from 'next/link';
 import type { RestaurantWithDishes, VisitAgain } from '@/lib/types';
 import PriorityBadge from './PriorityBadge';
-import RatingEditor from './RatingEditor';
+import FastVisitSheet from './FastVisitSheet';
+import LogVisitSheet from './LogVisitSheet';
 import Rating from './Rating';
 import DishCatalogue from './DishCatalogue';
 import FavouriteToggle from './FavouriteToggle';
+import ReallyWantToTryToggle from './ReallyWantToTryToggle';
 import { markTried, markWantToTry } from '@/lib/actions';
 import { formatDistance } from '@/lib/geo';
 import { parseRating } from '@/lib/rating';
+import type { Person } from '@/lib/types';
 
 const VISIT_AGAIN_LABEL: Record<VisitAgain, string> = {
   yes: 'Would go back',
@@ -48,13 +51,17 @@ export default function RestaurantCard({
   restaurant,
   expanded,
   onToggle,
+  people,
 }: {
   restaurant: RestaurantWithDishes;
   expanded: boolean;
   onToggle: () => void;
+  // Fetched once by RestaurantList (not per-card) and threaded down — see
+  // RestaurantList.tsx.
+  people: Person[];
 }) {
   const [r, setR] = useState(restaurant);
-  const [showRating, setShowRating] = useState(false);
+  const [sheetMode, setSheetMode] = useState<'closed' | 'fast' | 'detailed'>('closed');
   const [busy, setBusy] = useState(false);
 
   const ratingNum = parseRating(r.rating);
@@ -104,6 +111,14 @@ export default function RestaurantCard({
           <div className="shrink-0 flex items-center gap-2.5 mt-0.5">
             {r.status === 'Tried' && (
               <span className="text-[11px] uppercase tracking-wide text-cream-300/50">Tried</span>
+            )}
+            {r.status === 'Want to try' && (
+              <ReallyWantToTryToggle
+                restaurantId={r.id}
+                value={r.really_want_to_try}
+                onChange={(next) => setR((prev) => ({ ...prev, really_want_to_try: next }))}
+                size={16}
+              />
             )}
             <FavouriteToggle
               restaurantId={r.id}
@@ -227,23 +242,46 @@ export default function RestaurantCard({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setShowRating(true);
+                setSheetMode('fast');
               }}
               className="flex flex-col items-center gap-1 py-2.5 rounded-lg bg-forest-900/60 text-[11px] text-cream-100 tap-highlight-none"
             >
-              <span>★</span>Rate
+              <span>📝</span>Been here?
             </button>
           </div>
         </div>
       )}
 
-      {showRating && (
-        <RatingEditor
-          restaurant={r}
-          onClose={() => setShowRating(false)}
-          onSaved={(rating, notes, visitAgain) =>
-            setR((prev) => ({ ...prev, rating, user_notes: notes || null, visit_again: visitAgain }))
-          }
+      {sheetMode === 'fast' && (
+        <FastVisitSheet
+          restaurantId={r.id}
+          restaurantDishes={r.dishes}
+          people={people}
+          onClose={() => setSheetMode('closed')}
+          onSaved={(visitId) => {
+            setSheetMode('closed');
+            // The restaurant's own snapshot (rating/visit_again/status) is
+            // recomputed server-side by the Stage 3 trigger; this card's
+            // local state is a display-only cache, so a full refresh comes
+            // from whichever page re-fetches next — no local mirroring of
+            // the trigger's calculation is attempted here.
+            void visitId;
+            setR((prev) => ({ ...prev, status: 'Tried' }));
+          }}
+          onMoreDetails={() => setSheetMode('detailed')}
+        />
+      )}
+
+      {sheetMode === 'detailed' && (
+        <LogVisitSheet
+          restaurantId={r.id}
+          restaurantDishes={r.dishes}
+          people={people}
+          onClose={() => setSheetMode('closed')}
+          onSaved={() => {
+            setSheetMode('closed');
+            setR((prev) => ({ ...prev, status: 'Tried' }));
+          }}
         />
       )}
     </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { supabase } from './supabase';
-import type { Dish, VisitAgain } from './types';
+import type { Dish } from './types';
 
 /**
  * Writes back to Supabase (mark tried, rating, notes). These require an
@@ -27,25 +27,6 @@ export async function markWantToTry(id: number) {
   if (error) throw error;
 }
 
-/** Star rating, free-text notes, and "would I go back?" are all saved together. */
-export async function saveRatingAndNotes(
-  id: number,
-  rating: number | null,
-  notes: string,
-  visitAgain: VisitAgain | null
-) {
-  const { error } = await supabase
-    .from('restaurants')
-    .update({
-      rating,
-      user_notes: notes || null,
-      visit_again: visitAgain,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id);
-  if (error) throw error;
-}
-
 /** Thumbs up / down on an existing dish (from the original list or one you added). */
 export async function setDishLiked(dishId: number, liked: boolean | null) {
   const { error } = await supabase.from('dishes').update({ liked }).eq('id', dishId);
@@ -57,6 +38,19 @@ export async function setFavourite(id: number, isFavourite: boolean) {
   const { error } = await supabase
     .from('restaurants')
     .update({ is_favourite: isFavourite, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+/**
+ * Stage 6B: "somewhere we particularly want to go" — a personal intent
+ * signal, distinct from both Favourite (a place already liked) and
+ * `priority` (catalogue/research-derived, never touched by this call).
+ */
+export async function setReallyWantToTry(id: number, value: boolean) {
+  const { error } = await supabase
+    .from('restaurants')
+    .update({ really_want_to_try: value, updated_at: new Date().toISOString() })
     .eq('id', id);
   if (error) throw error;
 }

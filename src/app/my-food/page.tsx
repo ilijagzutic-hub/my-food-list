@@ -12,13 +12,14 @@ import SectionHeading from '@/components/SectionHeading';
 import BottomNav from '@/components/BottomNav';
 import type { RestaurantWithDishes } from '@/lib/types';
 
-type Tab = 'favourites' | 'tried' | 'want_to_try' | 'would_return';
+type Tab = 'favourites' | 'tried' | 'want_to_try' | 'would_return' | 'really_want_to_try';
 
 const TABS: { value: Tab; label: string }[] = [
   { value: 'favourites', label: 'Favourites' },
   { value: 'tried', label: 'Tried' },
   { value: 'want_to_try', label: 'Want to try' },
   { value: 'would_return', label: 'Would return' },
+  { value: 'really_want_to_try', label: 'Really want to try' },
 ];
 
 const DASHBOARD_CAP = 4;
@@ -95,6 +96,19 @@ export default function MyFoodPage() {
     () => rankRestaurants(restaurants.filter((r) => r.visit_again === 'yes'), {}),
     [restaurants]
   );
+  // Stage 6B: a genuine personal intent signal, distinct from Favourite
+  // and from priority — see ReallyWantToTryToggle. Scoped to Want to try:
+  // once a restaurant becomes Tried the stored flag is preserved (never
+  // silently cleared), but it stops being a meaningful "still want to go"
+  // callout here.
+  const reallyWantToTry = useMemo(
+    () =>
+      rankRestaurants(
+        restaurants.filter((r) => r.really_want_to_try && r.status === 'Want to try'),
+        {}
+      ),
+    [restaurants]
+  );
   const highestRated = useMemo(() => {
     const rated = restaurants.filter((r) => parseRating(r.rating) != null);
     return [...rated].sort((a, b) => (parseRating(b.rating) ?? 0) - (parseRating(a.rating) ?? 0));
@@ -120,6 +134,11 @@ export default function MyFoodPage() {
       title: 'Would return',
       list: wouldReturn,
       emptyMessage: "Once you've rated a visit 'would go back', it'll show up here.",
+    },
+    really_want_to_try: {
+      title: 'Really want to try',
+      list: reallyWantToTry,
+      emptyMessage: 'Mark a Want to Try place as "Really want to try" to see it here.',
     },
   };
 
@@ -199,6 +218,15 @@ export default function MyFoodPage() {
             emptyMessage="No favourites yet — tap the star on any restaurant to add one."
             seeAll={{ count: favourites.length, onClick: () => setTab('favourites') }}
           />
+          {reallyWantToTry.length > 0 && (
+            <DashboardSection
+              title="Really want to try"
+              subtitle="Somewhere we haven't been but particularly want to go"
+              restaurants={reallyWantToTry.slice(0, DASHBOARD_CAP)}
+              emptyMessage=""
+              seeAll={{ count: reallyWantToTry.length, onClick: () => setTab('really_want_to_try') }}
+            />
+          )}
           <DashboardSection
             title="Highest rated"
             restaurants={highestRated.slice(0, DASHBOARD_CAP)}

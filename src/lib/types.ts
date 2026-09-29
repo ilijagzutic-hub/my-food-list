@@ -29,6 +29,11 @@ export interface Restaurant {
   visit_again: VisitAgain | null;
   last_visited_at: string | null;
   is_favourite: boolean;
+  // Stage 6B: a genuine personal "we really want to go here" signal —
+  // deliberately separate from `priority` (catalogue/research-derived) and
+  // `is_favourite` (a place already liked/been to). Shared between Ilija
+  // and Yarra, not per-person — see the Stage 6B report.
+  really_want_to_try: boolean;
   created_at: string;
   updated_at: string;
 }

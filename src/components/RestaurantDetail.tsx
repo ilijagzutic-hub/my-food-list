@@ -8,9 +8,10 @@ import { markTried, markWantToTry } from '@/lib/actions';
 import type { RestaurantWithDishes, VisitAgain } from '@/lib/types';
 import PriorityBadge from './PriorityBadge';
 import FavouriteToggle from './FavouriteToggle';
+import ReallyWantToTryToggle from './ReallyWantToTryToggle';
 import DishCatalogue from './DishCatalogue';
 import Rating from './Rating';
-import RatingEditor from './RatingEditor';
+import FastVisitSheet from './FastVisitSheet';
 import LogVisitSheet from './LogVisitSheet';
 import VisitCard from './VisitCard';
 import BottomNav from './BottomNav';
@@ -34,12 +35,11 @@ export default function RestaurantDetail({ id }: { id: number }) {
   const { restaurants, loading, error, reload: reloadRestaurants } = useRestaurants();
   const found = useMemo(() => restaurants.find((r) => r.id === id) || null, [restaurants, id]);
   const [r, setR] = useState<RestaurantWithDishes | null>(found);
-  const [showRating, setShowRating] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const { visits, reload: reloadVisits } = useRestaurantVisits(id);
   const { people } = usePeople();
-  const [sheetMode, setSheetMode] = useState<'closed' | 'create' | 'edit'>('closed');
+  const [sheetMode, setSheetMode] = useState<'closed' | 'fast' | 'create' | 'edit'>('closed');
   const [editingVisitId, setEditingVisitId] = useState<number | null>(null);
   // null = no manual override yet, so the newest visit is expanded by
   // default (see effectiveExpandedId below); -1 = the user explicitly
@@ -80,8 +80,8 @@ export default function RestaurantDetail({ id }: { id: number }) {
         setR((prev) => (prev ? { ...prev, status: 'Tried' } : prev));
       }
     } catch {
-      // Rate & add notes surfaces write-permission failures explicitly;
-      // this shortcut button fails quietly like it does on RestaurantCard.
+      // Fails quietly like the equivalent shortcut on RestaurantCard;
+      // Been here? surfaces write-permission failures explicitly.
     } finally {
       setBusy(false);
     }
@@ -132,13 +132,22 @@ export default function RestaurantDetail({ id }: { id: number }) {
               {[r.suburb || r.city, (r.cuisine || []).join(', ')].filter(Boolean).join(' · ')}
             </p>
           </div>
-          <FavouriteToggle
-            restaurantId={r.id}
-            isFavourite={r.is_favourite}
-            onChange={(next) => setR((prev) => (prev ? { ...prev, is_favourite: next } : prev))}
-            size={24}
-            stopPropagation={false}
-          />
+          <div className="flex items-center gap-3 shrink-0">
+            <ReallyWantToTryToggle
+              restaurantId={r.id}
+              value={r.really_want_to_try}
+              onChange={(next) => setR((prev) => (prev ? { ...prev, really_want_to_try: next } : prev))}
+              size={22}
+              stopPropagation={false}
+            />
+            <FavouriteToggle
+              restaurantId={r.id}
+              isFavourite={r.is_favourite}
+              onChange={(next) => setR((prev) => (prev ? { ...prev, is_favourite: next } : prev))}
+              size={24}
+              stopPropagation={false}
+            />
+          </div>
         </div>
         <div className="flex items-center gap-3 mt-4">
           <PriorityBadge priority={r.priority} />
@@ -148,10 +157,10 @@ export default function RestaurantDetail({ id }: { id: number }) {
 
       <section className="px-4 mt-4">
         <button
-          onClick={() => setSheetMode('create')}
+          onClick={() => setSheetMode('fast')}
           className="w-full py-3.5 rounded-xl2 bg-gold-500 text-forest-950 font-semibold text-[14.5px] tap-highlight-none"
         >
-          + Log a visit
+          Been here?
         </button>
       </section>
 
@@ -261,7 +270,7 @@ export default function RestaurantDetail({ id }: { id: number }) {
           <p className="text-[14px] text-cream-100/85 leading-relaxed">{r.user_notes}</p>
         ) : (
           <p className="text-[13.5px] text-cream-300/50">
-            No personal notes yet — add some from Rate &amp; add notes below.
+            No personal notes yet — add one next time you log a visit.
           </p>
         )}
       </section>
@@ -282,29 +291,28 @@ export default function RestaurantDetail({ id }: { id: number }) {
                 setEditingVisitId(latestVisit.id);
                 setSheetMode('edit');
               } else {
-                setShowRating(true);
+                setSheetMode('fast');
               }
             }}
             className="py-3 rounded-xl bg-gold-500 text-forest-950 font-semibold text-[13.5px] tap-highlight-none"
           >
-            {latestVisit ? 'Edit latest visit' : 'Rate & add notes'}
+            {latestVisit ? 'Edit latest visit' : 'Been here?'}
           </button>
         </div>
       </section>
 
-      {showRating && (
-        <RatingEditor
-          restaurant={r}
-          onClose={() => setShowRating(false)}
-          onSaved={(rating, notes, visitAgain) =>
-            setR((prev) =>
-              prev ? { ...prev, rating, user_notes: notes || null, visit_again: visitAgain } : prev
-            )
-          }
+      {sheetMode === 'fast' && (
+        <FastVisitSheet
+          restaurantId={r.id}
+          restaurantDishes={r.dishes}
+          people={people}
+          onClose={() => setSheetMode('closed')}
+          onSaved={handleVisitSaved}
+          onMoreDetails={() => setSheetMode('create')}
         />
       )}
 
-      {sheetMode !== 'closed' && (
+      {(sheetMode === 'create' || sheetMode === 'edit') && (
         <LogVisitSheet
           restaurantId={r.id}
           restaurantDishes={r.dishes}

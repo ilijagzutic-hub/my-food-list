@@ -4,9 +4,8 @@ import { useState } from 'react';
 import { saveVisit, addCatalogueDishForVisit } from '@/lib/visitActions';
 import RatingPicker from './RatingPicker';
 import DishFeedbackPicker, { GUEST_KEY, type DraftDish } from './DishFeedbackPicker';
-import type { Dish, Person, VisitAgain, VisitWithDetails, SaveVisitPayload } from '@/lib/types';
+import type { Dish, Person, VisitAgain, SaveVisitPayload } from '@/lib/types';
 
-const OCCASIONS = ['Breakfast', 'Lunch', 'Dinner', 'Date night', 'Casual', 'Celebration', 'Other'];
 const VISIT_AGAIN_OPTIONS: { value: VisitAgain; label: string }[] = [
   { value: 'yes', label: 'Yes' },
   { value: 'maybe', label: 'Maybe' },
@@ -18,74 +17,57 @@ function todayIso() {
 }
 
 /**
- * Create or edit one visit — attendees, dishes eaten, and per-person dish
- * feedback all included. Save goes through the save_visit RPC as ONE
- * atomic write (see visitActions.saveVisit); nothing here writes to
- * restaurant_visits/visit_attendees/visit_ordered_dishes/visit_dish_feedback
- * directly.
+ * Stage 6B's fast path: Who went? → Rate it → Go back? → Save, in ~10
+ * seconds — everything else (dishes, per-dish feedback, a note) stays
+ * optional and collapsed. Saves through the exact same save_visit RPC as
+ * the detailed editor (see visitActions.saveVisit) with today's date, no
+ * occasion, no guests — this is deliberately one reusable component (not a
+ * second parallel implementation) used from restaurant detail,
+ * RestaurantCard and Pick result cards alike.
+ *
+ * "More details" hands off to the full LogVisitSheet for date/occasion/
+ * guests/editing — it opens fresh rather than carrying over partial
+ * answers from here, a deliberate v1 simplification.
  */
-export default function LogVisitSheet({
+export default function FastVisitSheet({
   restaurantId,
   restaurantDishes,
   people,
-  editingVisit,
   onClose,
   onSaved,
+  onMoreDetails,
 }: {
   restaurantId: number;
   restaurantDishes: Dish[];
   people: Person[];
-  editingVisit?: VisitWithDetails | null;
   onClose: () => void;
   onSaved: (visitId: number) => void;
+  onMoreDetails: () => void;
 }) {
-  const [visitedAt, setVisitedAt] = useState(editingVisit?.visited_at ?? todayIso());
-  const [occasion, setOccasion] = useState<string | null>(editingVisit?.occasion ?? null);
-  const [selectedPersonIds, setSelectedPersonIds] = useState<number[]>(
-    editingVisit?.attendeePersonIds ?? []
-  );
-  const [includesGuests, setIncludesGuests] = useState(editingVisit?.includes_guests ?? false);
-  const [rating, setRating] = useState<number | null>(editingVisit?.overall_rating ?? null);
-  const [wouldReturn, setWouldReturn] = useState<VisitAgain | null>(
-    editingVisit?.would_return ?? null
-  );
-  const [notes, setNotes] = useState(editingVisit?.notes ?? '');
+  const [selectedPersonIds, setSelectedPersonIds] = useState<number[]>([]);
+  const [rating, setRating] = useState<number | null>(null);
+  const [wouldReturn, setWouldReturn] = useState<VisitAgain | null>(null);
 
+  const [dishesOpen, setDishesOpen] = useState(false);
+  const [selectedDishes, setSelectedDishes] = useState<Map<number, DraftDish>>(new Map());
   const [catalogue, setCatalogue] = useState<Dish[]>(restaurantDishes);
-  const [dishesOpen, setDishesOpen] = useState((editingVisit?.orderedDishes.length ?? 0) > 0);
-  const [selectedDishes, setSelectedDishes] = useState<Map<number, DraftDish>>(() => {
-    const map = new Map<number, DraftDish>();
-    (editingVisit?.orderedDishes ?? []).forEach((od) => {
-      const feedback: Record<string, boolean> = {};
-      od.feedback.forEach((f) => {
-        feedback[f.person_id == null ? GUEST_KEY : String(f.person_id)] = f.liked;
-      });
-      map.set(od.dish_id, { dishId: od.dish_id, name: od.dish.name, notes: od.notes || '', feedback });
-    });
-    return map;
-  });
   const [newDishName, setNewDishName] = useState('');
   const [addingDish, setAddingDish] = useState(false);
+
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [note, setNote] = useState('');
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSave = selectedPersonIds.length > 0 || includesGuests;
-
-  function toggleAttendee(personId: number) {
-    setSelectedPersonIds((prev) =>
-      prev.includes(personId) ? prev.filter((id) => id !== personId) : [...prev, personId]
-    );
-  }
+  const allIds = people.map((p) => p.id);
+  const canSave = selectedPersonIds.length > 0;
 
   function toggleDish(dish: Dish) {
     setSelectedDishes((prev) => {
       const next = new Map(prev);
-      if (next.has(dish.id)) {
-        next.delete(dish.id);
-      } else {
-        next.set(dish.id, { dishId: dish.id, name: dish.name, notes: '', feedback: {} });
-      }
+      if (next.has(dish.id)) next.delete(dish.id);
+      else next.set(dish.id, { dishId: dish.id, name: dish.name, notes: '', feedback: {} });
       return next;
     });
   }
@@ -96,22 +78,19 @@ export default function LogVisitSheet({
       const draft = next.get(dishId);
       if (!draft) return prev;
       const feedback = { ...draft.feedback };
-      if (feedback[key] === liked) {
-        delete feedback[key]; // tapping the same verdict again clears it — back to unrated
-      } else {
-        feedback[key] = liked;
-      }
+      if (feedback[key] === liked) delete feedback[key];
+      else feedback[key] = liked;
       next.set(dishId, { ...draft, feedback });
       return next;
     });
   }
 
-  function setDishNote(dishId: number, note: string) {
+  function setDishNote(dishId: number, value: string) {
     setSelectedDishes((prev) => {
       const next = new Map(prev);
       const draft = next.get(dishId);
       if (!draft) return prev;
-      next.set(dishId, { ...draft, notes: note });
+      next.set(dishId, { ...draft, notes: value });
       return next;
     });
   }
@@ -143,14 +122,13 @@ export default function LogVisitSheet({
     setError(null);
     try {
       const payload: SaveVisitPayload = {
-        visit_id: editingVisit?.id ?? null,
         restaurant_id: restaurantId,
-        visited_at: visitedAt,
-        occasion,
+        visited_at: todayIso(),
+        occasion: null,
         overall_rating: rating,
         would_return: wouldReturn,
-        includes_guests: includesGuests,
-        notes: notes.trim() || null,
+        includes_guests: false,
+        notes: note.trim() || null,
         attendee_person_ids: selectedPersonIds,
         dishes: Array.from(selectedDishes.values()).map((d) => ({
           dish_id: d.dishId,
@@ -180,76 +158,45 @@ export default function LogVisitSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="w-10 h-1 bg-cream-300/20 rounded-full mx-auto mb-4" />
-        <h3 className="font-serif text-lg text-cream-50 mb-4">
-          {editingVisit ? 'Edit visit' : 'Log a visit'}
-        </h3>
-
-        <p className="text-xs uppercase tracking-wide text-cream-300/60 mb-2">Date</p>
-        <input
-          type="date"
-          value={visitedAt}
-          onChange={(e) => setVisitedAt(e.target.value)}
-          className="w-full bg-forest-900 border border-cream-300/15 rounded-xl px-3 py-2.5 text-sm text-cream-50 mb-5 focus:outline-none focus:border-gold-500/50"
-        />
+        <h3 className="font-serif text-lg text-cream-50 mb-4">Been here?</h3>
 
         <p className="text-xs uppercase tracking-wide text-cream-300/60 mb-2">Who went?</p>
-        <div className="flex flex-wrap gap-2 mb-1">
+        <div className="flex gap-2 mb-5">
           {people.map((p) => (
             <button
               key={p.id}
-              onClick={() => toggleAttendee(p.id)}
-              aria-pressed={selectedPersonIds.includes(p.id)}
-              className={`px-3.5 py-1.5 rounded-full text-[13px] border tap-highlight-none ${
-                selectedPersonIds.includes(p.id)
-                  ? 'bg-gold-500 border-gold-500 text-forest-950 font-medium'
-                  : 'bg-forest-900/60 border-cream-300/15 text-cream-100'
+              onClick={() => setSelectedPersonIds([p.id])}
+              aria-pressed={selectedPersonIds.length === 1 && selectedPersonIds[0] === p.id}
+              className={`flex-1 py-2.5 rounded-xl text-[14px] font-medium tap-highlight-none border ${
+                selectedPersonIds.length === 1 && selectedPersonIds[0] === p.id
+                  ? 'bg-gold-500 text-forest-950 border-gold-500'
+                  : 'bg-forest-900 text-cream-100 border-cream-300/15'
               }`}
             >
               {p.name}
             </button>
           ))}
-          <button
-            onClick={() => setIncludesGuests((g) => !g)}
-            aria-pressed={includesGuests}
-            className={`px-3.5 py-1.5 rounded-full text-[13px] border tap-highlight-none ${
-              includesGuests
-                ? 'bg-gold-500 border-gold-500 text-forest-950 font-medium'
-                : 'bg-forest-900/60 border-cream-300/15 text-cream-100'
-            }`}
-          >
-            + Guests
-          </button>
-        </div>
-        {!canSave && (
-          <p className="text-[12px] text-cream-300/50 mb-4">
-            Pick at least one of Ilija, Yarra or Guests.
-          </p>
-        )}
-        {canSave && <div className="mb-4" />}
-
-        <p className="text-xs uppercase tracking-wide text-cream-300/60 mb-2">Occasion</p>
-        <div className="flex flex-wrap gap-2 mb-5">
-          {OCCASIONS.map((o) => (
+          {people.length > 1 && (
             <button
-              key={o}
-              onClick={() => setOccasion(occasion === o ? null : o)}
-              className={`px-3 py-1.5 rounded-full text-[13px] border tap-highlight-none ${
-                occasion === o
-                  ? 'bg-gold-500 border-gold-500 text-forest-950 font-medium'
-                  : 'bg-forest-900/60 border-cream-300/15 text-cream-100'
+              onClick={() => setSelectedPersonIds(allIds)}
+              aria-pressed={selectedPersonIds.length === allIds.length && allIds.every((id) => selectedPersonIds.includes(id))}
+              className={`flex-1 py-2.5 rounded-xl text-[14px] font-medium tap-highlight-none border ${
+                selectedPersonIds.length === allIds.length && allIds.every((id) => selectedPersonIds.includes(id))
+                  ? 'bg-gold-500 text-forest-950 border-gold-500'
+                  : 'bg-forest-900 text-cream-100 border-cream-300/15'
               }`}
             >
-              {o}
+              Both
             </button>
-          ))}
+          )}
         </div>
 
-        <p className="text-xs uppercase tracking-wide text-cream-300/60 mb-2">Overall rating</p>
+        <p className="text-xs uppercase tracking-wide text-cream-300/60 mb-2">How was it?</p>
         <div className="mb-5">
           <RatingPicker value={rating} onChange={setRating} />
         </div>
 
-        <p className="text-xs uppercase tracking-wide text-cream-300/60 mb-2">Would you return?</p>
+        <p className="text-xs uppercase tracking-wide text-cream-300/60 mb-2">Would you go back?</p>
         <div className="flex gap-2 mb-5">
           {VISIT_AGAIN_OPTIONS.map((opt) => (
             <button
@@ -270,16 +217,15 @@ export default function LogVisitSheet({
           onClick={() => setDishesOpen((o) => !o)}
           className="text-[13px] text-gold-400 tap-highlight-none mb-3"
         >
-          {dishesOpen ? '▾' : '▸'} What did we eat?
+          {dishesOpen ? '▾' : '▸'} + Add what we ate
           {selectedDishes.size > 0 ? ` (${selectedDishes.size})` : ''}
         </button>
-
         {dishesOpen && (
-          <div className="mb-5">
+          <div className="mb-4">
             <DishFeedbackPicker
               catalogue={catalogue}
               people={people}
-              includesGuests={includesGuests}
+              includesGuests={false}
               selectedDishes={selectedDishes}
               onToggleDish={toggleDish}
               onSetFeedback={setDishFeedback}
@@ -292,18 +238,27 @@ export default function LogVisitSheet({
           </div>
         )}
 
-        <p className="text-xs uppercase tracking-wide text-cream-300/60 mb-2">Visit notes</p>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={3}
-          placeholder="Optional"
-          className="w-full bg-forest-900 border border-cream-300/15 rounded-xl p-3 text-sm text-cream-50 placeholder:text-cream-300/40 focus:outline-none focus:border-gold-500/50 resize-none"
-        />
+        <button
+          onClick={() => setNoteOpen((o) => !o)}
+          className="text-[13px] text-gold-400 tap-highlight-none mb-3"
+        >
+          {noteOpen ? '▾' : '▸'} + Add a note
+        </button>
+        {noteOpen && (
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Optional"
+            className="w-full mb-4 bg-forest-900 border border-cream-300/15 rounded-xl px-3 py-2.5 text-[13.5px] text-cream-50 placeholder:text-cream-300/40 focus:outline-none focus:border-gold-500/50"
+          />
+        )}
 
-        {error && <p className="text-xs text-red-300 mt-3">{error}</p>}
+        {!canSave && (
+          <p className="text-[12px] text-cream-300/50 mb-2">Pick who went to save.</p>
+        )}
+        {error && <p className="text-xs text-red-300 mb-2">{error}</p>}
 
-        <div className="flex gap-3 mt-5">
+        <div className="flex gap-3 mt-3">
           <button
             onClick={onClose}
             className="flex-1 py-3 rounded-xl border border-cream-300/20 text-cream-100 text-sm font-medium tap-highlight-none"
@@ -318,6 +273,13 @@ export default function LogVisitSheet({
             {saving ? 'Saving…' : 'Save visit'}
           </button>
         </div>
+
+        <button
+          onClick={onMoreDetails}
+          className="w-full mt-3 py-2 text-[12.5px] text-cream-300/50 tap-highlight-none"
+        >
+          More details (date, occasion, guests…)
+        </button>
       </div>
     </div>
   );

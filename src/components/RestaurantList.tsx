@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { RestaurantWithDishes } from '@/lib/types';
+import { usePeople } from '@/lib/useVisits';
 import RestaurantCard from './RestaurantCard';
 
 export default function RestaurantList({
@@ -12,6 +13,11 @@ export default function RestaurantList({
   emptyMessage?: string;
 }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // Fetched once here (a tiny 2-row query) and threaded down to every
+  // RestaurantCard, rather than each card fetching it independently —
+  // Home/Explore/Map/My Food can all render many cards at once. Called
+  // before the empty-state return so the hook order stays unconditional.
+  const { people } = usePeople();
 
   if (restaurants.length === 0) {
     return (
@@ -29,6 +35,7 @@ export default function RestaurantList({
           restaurant={r}
           expanded={expandedId === r.id}
           onToggle={() => setExpandedId((cur) => (cur === r.id ? null : r.id))}
+          people={people}
         />
       ))}
     </div>

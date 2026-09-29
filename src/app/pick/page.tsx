@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRestaurants } from '@/lib/useRestaurants';
+import { usePeople } from '@/lib/useVisits';
 import { getBrowserLocation } from '@/lib/geo';
 import {
   DEFAULT_ANSWERS,
@@ -65,7 +66,8 @@ function OptionButton({
 }
 
 export default function PickPage() {
-  const { restaurants, loading, error } = useRestaurants();
+  const { restaurants, loading, error, reload: reloadRestaurants } = useRestaurants();
+  const { people } = usePeople();
   const [step, setStep] = useState<Step>('where');
   const [answers, setAnswers] = useState<PickAnswers>(DEFAULT_ANSWERS);
   const [locating, setLocating] = useState(false);
@@ -165,6 +167,20 @@ export default function PickPage() {
     const different = pickThreeDifferent(scored, excludeIds);
     setSinglePick(null);
     setShown(different.length ? different : shown);
+  }
+
+  // Stage 6B: closes the Pick → Eat → Feedback loop. reloadRestaurants()
+  // means the NEXT Pick run sees the restaurant's real new Tried status;
+  // patching the currently-displayed card's status too means you don't
+  // have to start over to see it reflected right away.
+  function handleVisitSaved(restaurantId: number) {
+    void reloadRestaurants();
+    const patch = (s: ScoredPick): ScoredPick =>
+      s.restaurant.id === restaurantId
+        ? { ...s, restaurant: { ...s.restaurant, status: 'Tried' } }
+        : s;
+    setShown((prev) => prev.map(patch));
+    setSinglePick((prev) => (prev ? patch(prev) : prev));
   }
 
   function startOver() {
@@ -340,7 +356,12 @@ export default function PickPage() {
               <p className="text-[12.5px] text-cream-300/50 mb-3">
                 From your strongest matches, we picked one:
               </p>
-              <PickResultCard picked={singlePick} answers={answers} />
+              <PickResultCard
+                picked={singlePick}
+                answers={answers}
+                people={people}
+                onVisitSaved={() => handleVisitSaved(singlePick.restaurant.id)}
+              />
               <div className="flex gap-2.5 mt-3">
                 <button
                   onClick={handlePickOneForUs}
@@ -401,7 +422,13 @@ export default function PickPage() {
 
               <div className="flex flex-col gap-3">
                 {shown.map((s) => (
-                  <PickResultCard key={s.restaurant.id} picked={s} answers={answers} />
+                  <PickResultCard
+                    key={s.restaurant.id}
+                    picked={s}
+                    answers={answers}
+                    people={people}
+                    onVisitSaved={() => handleVisitSaved(s.restaurant.id)}
+                  />
                 ))}
               </div>
 
