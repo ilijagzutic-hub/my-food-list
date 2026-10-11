@@ -18,13 +18,14 @@ export async function saveVisit(payload: SaveVisitPayload): Promise<number> {
 }
 
 /**
- * Delete a visit. This is a single SQL DELETE — FK cascades remove its
- * attendees and ordered dishes (which cascades their feedback), and the
- * restaurant_visits trigger recomputes the restaurant's snapshot fields,
- * all within that one statement. No RPC needed.
+ * Delete a visit through the narrow `delete_visit` Postgres function (Stage
+ * 7A.4) — the browser has no direct write access to the visit tables. FK
+ * cascades remove the visit's attendees and ordered dishes (which cascades
+ * their feedback), and the restaurant_visits trigger recomputes the
+ * restaurant's snapshot fields, all inside that one call.
  */
 export async function deleteVisit(visitId: number): Promise<void> {
-  const { error } = await supabase.from('restaurant_visits').delete().eq('id', visitId);
+  const { error } = await supabase.rpc('delete_visit', { visit_id: visitId });
   if (error) throw error;
 }
 
