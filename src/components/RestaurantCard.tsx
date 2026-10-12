@@ -10,7 +10,6 @@ import Rating from './Rating';
 import DishCatalogue from './DishCatalogue';
 import FavouriteToggle from './FavouriteToggle';
 import ReallyWantToTryToggle from './ReallyWantToTryToggle';
-import { markTried, markWantToTry } from '@/lib/actions';
 import { formatDistance } from '@/lib/geo';
 import { parseRating } from '@/lib/rating';
 import type { Person } from '@/lib/types';
@@ -62,28 +61,9 @@ export default function RestaurantCard({
 }) {
   const [r, setR] = useState(restaurant);
   const [sheetMode, setSheetMode] = useState<'closed' | 'fast' | 'detailed'>('closed');
-  const [busy, setBusy] = useState(false);
 
   const ratingNum = parseRating(r.rating);
   const highlight = keyHighlight(r);
-
-  async function handleToggleTried() {
-    setBusy(true);
-    try {
-      if (r.status === 'Tried') {
-        await markWantToTry(r.id);
-        setR((prev) => ({ ...prev, status: 'Want to try' }));
-      } else {
-        await markTried(r.id);
-        setR((prev) => ({ ...prev, status: 'Tried' }));
-      }
-    } catch {
-      // Silently ignored in the button; the rating editor surfaces the same
-      // failure with an explanation when writes aren't enabled yet.
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <div
@@ -209,7 +189,7 @@ export default function RestaurantCard({
           )}
           <p className="text-[13px] text-cream-300/60 mt-1">{r.status}</p>
 
-          <div className="grid grid-cols-4 gap-2 mt-4">
+          <div className="grid grid-cols-3 gap-2 mt-4">
             <a
               href={mapUrl(r)}
               target="_blank"
@@ -228,17 +208,6 @@ export default function RestaurantCard({
             >
               <span>🔗</span>Website
             </a>
-            <button
-              disabled={busy}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleToggleTried();
-              }}
-              className="flex flex-col items-center gap-1 py-2.5 rounded-lg bg-forest-900/60 text-[11px] text-cream-100 tap-highlight-none disabled:opacity-50"
-            >
-              <span>✓</span>
-              {r.status === 'Tried' ? 'Undo' : 'Mark Tried'}
-            </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();

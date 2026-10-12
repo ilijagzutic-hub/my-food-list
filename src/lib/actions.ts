@@ -4,28 +4,14 @@ import { supabase } from './supabase';
 import type { Dish } from './types';
 
 /**
- * Writes back to Supabase (mark tried, rating, notes). These require an
- * UPDATE row-level-security policy on `restaurants` that permits the
- * publishable/anon key to write — by default Supabase only allows what RLS
- * grants, so until that policy exists these calls will fail with a
- * permission error, which the UI surfaces rather than pretending to succeed.
+ * Direct browser writes to Supabase. Since Stage 7A.5 these are limited to
+ * the explicit personal flags (favourite, Really Want to Try) and dish
+ * thumbs / added dishes. A restaurant's status, rating, visit_again and
+ * last_visited_at are NOT written from the browser at all: they are derived
+ * from visit history by the `save_visit` / `delete_visit` functions and the
+ * restaurant_visits trigger (see visitActions.ts). `updated_at` is set by
+ * the restaurants_updated_at trigger, so callers never send it.
  */
-export async function markTried(id: number) {
-  const now = new Date().toISOString();
-  const { error } = await supabase
-    .from('restaurants')
-    .update({ status: 'Tried', updated_at: now, last_visited_at: now })
-    .eq('id', id);
-  if (error) throw error;
-}
-
-export async function markWantToTry(id: number) {
-  const { error } = await supabase
-    .from('restaurants')
-    .update({ status: 'Want to try', updated_at: new Date().toISOString() })
-    .eq('id', id);
-  if (error) throw error;
-}
 
 /** Thumbs up / down on an existing dish (from the original list or one you added). */
 export async function setDishLiked(dishId: number, liked: boolean | null) {
@@ -37,7 +23,7 @@ export async function setDishLiked(dishId: number, liked: boolean | null) {
 export async function setFavourite(id: number, isFavourite: boolean) {
   const { error } = await supabase
     .from('restaurants')
-    .update({ is_favourite: isFavourite, updated_at: new Date().toISOString() })
+    .update({ is_favourite: isFavourite })
     .eq('id', id);
   if (error) throw error;
 }
@@ -50,7 +36,7 @@ export async function setFavourite(id: number, isFavourite: boolean) {
 export async function setReallyWantToTry(id: number, value: boolean) {
   const { error } = await supabase
     .from('restaurants')
-    .update({ really_want_to_try: value, updated_at: new Date().toISOString() })
+    .update({ really_want_to_try: value })
     .eq('id', id);
   if (error) throw error;
 }

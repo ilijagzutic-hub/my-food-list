@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRestaurants } from '@/lib/useRestaurants';
 import { useRestaurantVisits, usePeople } from '@/lib/useVisits';
-import { markTried, markWantToTry } from '@/lib/actions';
 import type { RestaurantWithDishes, VisitAgain } from '@/lib/types';
 import PriorityBadge from './PriorityBadge';
 import FavouriteToggle from './FavouriteToggle';
@@ -35,7 +34,6 @@ export default function RestaurantDetail({ id }: { id: number }) {
   const { restaurants, loading, error, reload: reloadRestaurants } = useRestaurants();
   const found = useMemo(() => restaurants.find((r) => r.id === id) || null, [restaurants, id]);
   const [r, setR] = useState<RestaurantWithDishes | null>(found);
-  const [busy, setBusy] = useState(false);
 
   const { visits, reload: reloadVisits } = useRestaurantVisits(id);
   const { people } = usePeople();
@@ -66,25 +64,6 @@ export default function RestaurantDetail({ id }: { id: number }) {
   async function handleVisitDeleted() {
     setExpandedVisitId(null);
     await Promise.all([reloadVisits(), reloadRestaurants()]);
-  }
-
-  async function handleToggleTried() {
-    if (!r) return;
-    setBusy(true);
-    try {
-      if (r.status === 'Tried') {
-        await markWantToTry(r.id);
-        setR((prev) => (prev ? { ...prev, status: 'Want to try' } : prev));
-      } else {
-        await markTried(r.id);
-        setR((prev) => (prev ? { ...prev, status: 'Tried' } : prev));
-      }
-    } catch {
-      // Fails quietly like the equivalent shortcut on RestaurantCard;
-      // Been here? surfaces write-permission failures explicitly.
-    } finally {
-      setBusy(false);
-    }
   }
 
   if (loading) {
@@ -277,14 +256,7 @@ export default function RestaurantDetail({ id }: { id: number }) {
 
       <section className="px-4 mt-6 mb-4">
         <h2 className="font-serif text-[17px] text-cream-50 mb-3">Actions</h2>
-        <div className="grid grid-cols-2 gap-2.5">
-          <button
-            disabled={busy}
-            onClick={handleToggleTried}
-            className="py-3 rounded-xl bg-forest-800/70 border border-cream-300/15 text-[13.5px] text-cream-100 disabled:opacity-50 tap-highlight-none"
-          >
-            {r.status === 'Tried' ? 'Mark Want to Try' : 'Mark Tried'}
-          </button>
+        <div className="grid grid-cols-1 gap-2.5">
           <button
             onClick={() => {
               if (latestVisit) {
