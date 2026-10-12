@@ -29,7 +29,8 @@ export type ReasonCode =
   | 'something_new'
   | 'known_for_dish'
   | 'high_interest'
-  | 'really_want_to_try';
+  | 'really_want_to_try'
+  | 'near_area';
 
 export type WhereMode = 'near' | 'area' | 'anywhere';
 export type NewOrRepeat = 'new' | 'repeat' | 'either';
@@ -38,7 +39,12 @@ export interface PickAnswers {
   where: WhereMode;
   coords: Coords | null; // set once geolocation resolves, where='near' only
   maxDistanceKm: number | null; // where='near' only
-  area: string | null; // exact suburb or city string, where='area' only
+  area: string | null; // exact suburb (or city, when a restaurant has no suburb), where='area' only
+  // Stage 7C: null = EXACT suburb only. A number is an explicit, user-triggered
+  // expansion: also include restaurants with a verified address-level
+  // coordinate within that many km of the area's centre (see AREA_EXPANSION_KM).
+  // Only ever set by a tap on "Expand nearby" / "Expand further".
+  areaRadiusKm: number | null;
   occasion: string | null; // an OCCASION_OPTIONS key, or null = Anything
   cuisine: string | null; // an exact cuisine string as stored on restaurants, or null = Anything
   foodQuery: string; // free-text dish/tag search, '' = none
@@ -55,6 +61,7 @@ export const DEFAULT_ANSWERS: PickAnswers = {
   coords: null,
   maxDistanceKm: 5,
   area: null,
+  areaRadiusKm: null,
   occasion: null,
   cuisine: null,
   foodQuery: '',
@@ -63,6 +70,14 @@ export const DEFAULT_ANSWERS: PickAnswers = {
 };
 
 export const DISTANCE_OPTIONS_KM = [2, 5, 10, 20];
+
+// Stage 7C: the two explicit geographic widenings for "Choose an area".
+// First ("Expand nearby") stays in genuinely neighbouring suburbs; second
+// ("Expand further") reaches the next ring out. Beyond that the only option
+// is Anywhere. Distances are measured from the area's centre, which is derived
+// from its own restaurants' verified coordinates (areaCentre) — never from a
+// hard-coded list of suburb names.
+export const AREA_EXPANSION_KM = [3, 6];
 
 // Derived from the actual occasions text on file (see Stage 6A build notes)
 // rather than invented wholesale — free-text values like "Casual lunch" /
@@ -105,48 +120,99 @@ function foodQueryMatches(r: RestaurantWithDishes, query: string): boolean {
   );
 }
 
-export type EligibleRestaurant = RestaurantWithDishes & { distanceKm: number | null };
+export type EligibleRestaurant = RestaurantWithDishes & {
+  distanceKm: number | null;
+  // Stage 7C: distance from the chosen area's centre (km), only set while an
+  // explicit area expansion is active and the restaurant has a verified point.
+  areaDistanceKm?: number | null;
+};
+
+/** The area a restaurant belongs to — the same key the area picker lists (suburb, else city). */
+function areaKeyOf(r: RestaurantWithDishes): string {
+  return (r.suburb || r.city || '').trim().toLowerCase();
+}
+
+/** A verified, address-level point — never a suburb centroid (matches Stage 5B's map rule). */
+function hasVerifiedPoint(r: RestaurantWithDishes): boolean {
+  return r.latitude != null && r.longitude != null && r.location_precision === 'address';
+}
 
 /**
- * Hard constraints only — cuisine, distance/area, and Something New vs Go
- * Back. Pure and side-effect-free so the "how many would this leave"
+ * The centre of an area, derived from that area's own restaurants' verified
+ * coordinates (their mean point). Null when none has one — then no coordinate
+ * expansion can be offered for that area. No suburb is ever named in code.
+ */
+export function areaCentre(restaurants: RestaurantWithDishes[], area: string): Coords | null {
+  const key = area.trim().toLowerCase();
+  const pts = restaurants.filter((r) => !r.closed && areaKeyOf(r) === key && hasVerifiedPoint(r));
+  if (!pts.length) return null;
+  return {
+    lat: pts.reduce((s, r) => s + (r.latitude as number), 0) / pts.length,
+    lon: pts.reduce((s, r) => s + (r.longitude as number), 0) / pts.length,
+  };
+}
+
+/**
+ * STAGE 1 of the pipeline — geography, applied BEFORE any other constraint and
+ * long before scoring. It is a hard wall: nothing outside it can come back in
+ * through any later signal.
+ *
+ *   anywhere : the whole open catalogue (the ONLY mode that allows this)
+ *   near     : verified-point restaurants within maxDistanceKm of the user.
+ *              Missing coords/radius => nobody qualifies (never "everyone").
+ *   area     : restaurants whose area key is exactly the chosen area; plus, only
+ *              when areaRadiusKm is set by an explicit tap, verified-point
+ *              restaurants within that many km of the area's centre.
+ *              Missing area => nobody qualifies.
+ */
+function applyGeography(restaurants: RestaurantWithDishes[], answers: PickAnswers): EligibleRestaurant[] {
+  const open = restaurants.filter((r) => !r.closed);
+  const distFromUser = (r: RestaurantWithDishes) =>
+    answers.coords && r.latitude != null && r.longitude != null
+      ? haversineKm(answers.coords, { lat: r.latitude, lon: r.longitude })
+      : null;
+
+  if (answers.where === 'near') {
+    if (!answers.coords || answers.maxDistanceKm == null) return [];
+    const maxKm = answers.maxDistanceKm;
+    return open
+      .filter(hasVerifiedPoint)
+      .map((r): EligibleRestaurant => ({ ...r, distanceKm: distFromUser(r) }))
+      .filter((r) => r.distanceKm != null && r.distanceKm <= maxKm);
+  }
+
+  if (answers.where === 'area') {
+    if (!answers.area || !answers.area.trim()) return [];
+    const key = answers.area.trim().toLowerCase();
+    const centre = answers.areaRadiusKm != null ? areaCentre(restaurants, answers.area) : null;
+    const radius = answers.areaRadiusKm;
+    const out: EligibleRestaurant[] = [];
+    for (const r of open) {
+      const exact = areaKeyOf(r) === key;
+      const areaDistanceKm =
+        centre && hasVerifiedPoint(r)
+          ? haversineKm(centre, { lat: r.latitude as number, lon: r.longitude as number })
+          : null;
+      const nearby = !exact && radius != null && areaDistanceKm != null && areaDistanceKm <= radius;
+      if (exact || nearby) out.push({ ...r, distanceKm: distFromUser(r), areaDistanceKm });
+    }
+    return out;
+  }
+
+  return open.map((r): EligibleRestaurant => ({ ...r, distanceKm: distFromUser(r) }));
+}
+
+/**
+ * Hard constraints, in a fixed order: GEOGRAPHY first, then cuisine and
+ * Something New vs Go Back. Scoring (scoreCandidates) only ever sees what
+ * survives this. Pure and side-effect-free so the "how many would this leave"
  * relaxation math (below) can call it repeatedly without surprises.
  */
 export function applyHardConstraints(
   restaurants: RestaurantWithDishes[],
   answers: PickAnswers
 ): EligibleRestaurant[] {
-  return restaurants
-    .filter((r) => !r.closed)
-    .filter((r) => {
-      // A distance-constrained recommendation is only meaningful with a
-      // real, verified address-level coordinate — never a suburb centroid,
-      // matching Stage 5B's own map-eligibility rule.
-      if (answers.where === 'near' && answers.coords && answers.maxDistanceKm != null) {
-        return r.latitude != null && r.longitude != null && r.location_precision === 'address';
-      }
-      return true;
-    })
-    .map((r): EligibleRestaurant => {
-      const distanceKm =
-        answers.coords && r.latitude != null && r.longitude != null
-          ? haversineKm(answers.coords, { lat: r.latitude, lon: r.longitude })
-          : null;
-      return { ...r, distanceKm };
-    })
-    .filter((r) => {
-      if (answers.where === 'near' && answers.maxDistanceKm != null && r.distanceKm != null) {
-        return r.distanceKm <= answers.maxDistanceKm;
-      }
-      return true;
-    })
-    .filter((r) => {
-      if (answers.where === 'area' && answers.area) {
-        const a = answers.area.toLowerCase();
-        return (r.suburb || '').toLowerCase() === a || (r.city || '').toLowerCase() === a;
-      }
-      return true;
-    })
+  return applyGeography(restaurants, answers)
     .filter((r) => {
       if (!answers.cuisine) return true;
       return (r.cuisine || []).some((c) => c.toLowerCase() === answers.cuisine!.toLowerCase());
@@ -202,6 +268,15 @@ export function scoreCandidates(eligible: EligibleRestaurant[], answers: PickAns
     if (answers.where === 'near' && r.distanceKm != null) {
       score += Math.max(0, 10 - Math.min(r.distanceKm, 10));
       if (r.distanceKm <= 3) reasons.push('nearby');
+    }
+    // Stage 7C: only inside an explicitly expanded area. Everything here has
+    // ALREADY passed the geographic wall; this just keeps places in the chosen
+    // suburb itself ahead of the neighbouring ring, same shape as the Near Me bonus.
+    if (answers.where === 'area' && answers.areaRadiusKm != null && r.areaDistanceKm != null) {
+      score += Math.max(0, 10 - Math.min(r.areaDistanceKm, 10));
+      if ((r.suburb || r.city || '').trim().toLowerCase() !== (answers.area || '').trim().toLowerCase()) {
+        reasons.push('near_area');
+      }
     }
     if (answers.cuisine) {
       reasons.push('exact_cuisine');
@@ -297,6 +372,9 @@ export function explainPick(picked: ScoredPick, answers: PickAnswers): string {
   } else if (answers.where === 'near' && r.distanceKm != null) {
     phrases.push(`${formatDistance(r.distanceKm)} away`);
   }
+  if (has('near_area') && r.areaDistanceKm != null && answers.area) {
+    phrases.push(`${formatDistance(r.areaDistanceKm)} from ${answers.area}`);
+  }
   if (has('exact_cuisine') && answers.cuisine) {
     phrases.push(`matches ${answers.cuisine}`);
   }
@@ -379,22 +457,52 @@ export function suggestRelaxations(
 ): RelaxationOption[] {
   const options: RelaxationOption[] = [];
 
+  // --- Geography (Stage 7C). Every option below is only ever APPLIED by the
+  // user tapping it. Offered one ring at a time: the next step out that would
+  // actually add restaurants. "Anywhere" (the whole catalogue) is held back
+  // until there's no further ring that helps — or, for an area search, once the
+  // user has already widened it at least once.
+  let ringOffered = false;
+
   if (answers.where === 'near' && answers.maxDistanceKm != null) {
-    const bigger = DISTANCE_OPTIONS_KM.find((km) => km > answers.maxDistanceKm!);
-    if (bigger) {
-      const next = { ...answers, maxDistanceKm: bigger };
+    for (const km of DISTANCE_OPTIONS_KM.filter((k) => k > answers.maxDistanceKm!)) {
+      const next = { ...answers, maxDistanceKm: km };
       const count = applyHardConstraints(restaurants, next).length;
       if (count > currentCount) {
-        options.push({ key: 'expand_distance', label: `Expand to ${bigger} km`, next, resultingCount: count });
+        options.push({ key: 'expand_distance', label: `Expand to ${km} km`, next, resultingCount: count });
+        ringOffered = true;
+        break;
+      }
+    }
+  }
+
+  if (answers.where === 'area' && answers.area) {
+    const current = answers.areaRadiusKm;
+    for (const km of AREA_EXPANSION_KM.filter((k) => current == null || k > current)) {
+      const next = { ...answers, areaRadiusKm: km };
+      const count = applyHardConstraints(restaurants, next).length;
+      if (count > currentCount) {
+        const first = km === AREA_EXPANSION_KM[0];
+        options.push({
+          key: first ? 'expand_nearby' : 'expand_further',
+          label: `${first ? 'Expand nearby' : 'Expand further'} · about ${km} km`,
+          next,
+          resultingCount: count,
+        });
+        ringOffered = true;
+        break;
       }
     }
   }
 
   if (answers.where === 'near' || answers.where === 'area') {
-    const next = { ...answers, where: 'anywhere' as const, coords: null, area: null };
-    const count = applyHardConstraints(restaurants, next).length;
-    if (count > currentCount) {
-      options.push({ key: 'anywhere', label: 'Search anywhere', next, resultingCount: count });
+    const alreadyWidened = answers.where === 'area' && answers.areaRadiusKm != null;
+    if (!ringOffered || alreadyWidened) {
+      const next = { ...answers, where: 'anywhere' as const, coords: null, area: null, areaRadiusKm: null };
+      const count = applyHardConstraints(restaurants, next).length;
+      if (count > currentCount) {
+        options.push({ key: 'anywhere', label: 'Anywhere', next, resultingCount: count });
+      }
     }
   }
 
@@ -442,7 +550,9 @@ export function describeAnswers(answers: PickAnswers): string {
     answers.where === 'near' && answers.maxDistanceKm != null
       ? `within ${answers.maxDistanceKm} km`
       : answers.where === 'area' && answers.area
-      ? `in ${answers.area}`
+      ? answers.areaRadiusKm != null
+        ? `within about ${answers.areaRadiusKm} km of ${answers.area}`
+        : `in ${answers.area}`
       : null;
 
   const scope =

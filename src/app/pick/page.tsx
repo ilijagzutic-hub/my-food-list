@@ -142,7 +142,14 @@ export default function PickPage() {
     const coords = await getBrowserLocation();
     setLocating(false);
     if (coords) {
-      setAnswers((a) => ({ ...a, where: 'near', coords, maxDistanceKm: a.maxDistanceKm ?? 5 }));
+      setAnswers((a) => ({
+        ...a,
+        where: 'near',
+        coords,
+        area: null,
+        areaRadiusKm: null,
+        maxDistanceKm: a.maxDistanceKm ?? 5,
+      }));
       setStep('distance');
     } else {
       setLocationError("Couldn't get your location — check permissions, or pick an area instead.");
@@ -228,7 +235,7 @@ export default function PickPage() {
           </OptionButton>
           <OptionButton
             active={answers.where === 'anywhere'}
-            onClick={() => advanceAfter('where', { where: 'anywhere', coords: null, area: null })}
+            onClick={() => advanceAfter('where', { where: 'anywhere', coords: null, area: null, areaRadiusKm: null })}
           >
             🗺️ Anywhere
           </OptionButton>
@@ -401,8 +408,8 @@ export default function PickPage() {
               {eligible.length < 3 && (
                 <div className="mb-4 p-3.5 rounded-xl bg-forest-800/50 border border-cream-300/10">
                   <p className="text-[13.5px] text-cream-100/85">
-                    Only {eligible.length} saved restaurant{eligible.length === 1 ? '' : 's'} match{' '}
-                    {describeAnswers(answers)}.
+                    {eligible.length} saved place{eligible.length === 1 ? '' : 's'} match
+                    {eligible.length === 1 ? 'es' : ''} {describeAnswers(answers)}.
                   </p>
                   {relaxations.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-2.5">
@@ -418,6 +425,11 @@ export default function PickPage() {
                     </div>
                   )}
                 </div>
+              )}
+              {eligible.length >= 3 && answers.where === 'area' && answers.areaRadiusKm != null && (
+                <p className="mb-3 text-[12.5px] text-cream-300/60">
+                  Showing places within about {answers.areaRadiusKm} km of {answers.area}.
+                </p>
               )}
 
               <div className="flex flex-col gap-3">
@@ -467,7 +479,8 @@ export default function PickPage() {
         onClose={() => setAreaSheetOpen(false)}
         onSelect={(value) => {
           setAreaSheetOpen(false);
-          advanceAfter('where', { where: 'area', area: value, coords: null });
+          // A fresh area choice always starts at EXACT suburb — any widening is a separate, explicit tap.
+          advanceAfter('where', { where: 'area', area: value, coords: null, areaRadiusKm: null });
         }}
       />
       <PickerSheet
