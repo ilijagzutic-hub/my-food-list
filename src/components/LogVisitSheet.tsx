@@ -5,6 +5,7 @@ import { saveVisit, addCatalogueDishForVisit } from '@/lib/visitActions';
 import RatingPicker from './RatingPicker';
 import DishFeedbackPicker, { GUEST_KEY, type DraftDish } from './DishFeedbackPicker';
 import type { Dish, Person, VisitAgain, VisitWithDetails, SaveVisitPayload } from '@/lib/types';
+import { todayLocalIso } from '@/lib/date';
 
 const OCCASIONS = ['Breakfast', 'Lunch', 'Dinner', 'Date night', 'Casual', 'Celebration', 'Other'];
 const VISIT_AGAIN_OPTIONS: { value: VisitAgain; label: string }[] = [
@@ -12,10 +13,6 @@ const VISIT_AGAIN_OPTIONS: { value: VisitAgain; label: string }[] = [
   { value: 'maybe', label: 'Maybe' },
   { value: 'no', label: 'No' },
 ];
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 /**
  * Create or edit one visit — attendees, dishes eaten, and per-person dish
@@ -39,7 +36,7 @@ export default function LogVisitSheet({
   onClose: () => void;
   onSaved: (visitId: number) => void;
 }) {
-  const [visitedAt, setVisitedAt] = useState(editingVisit?.visited_at ?? todayIso());
+  const [visitedAt, setVisitedAt] = useState(editingVisit?.visited_at ?? todayLocalIso());
   const [occasion, setOccasion] = useState<string | null>(editingVisit?.occasion ?? null);
   const [selectedPersonIds, setSelectedPersonIds] = useState<number[]>(
     editingVisit?.attendeePersonIds ?? []

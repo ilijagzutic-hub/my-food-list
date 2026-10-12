@@ -5,16 +5,13 @@ import { saveVisit, addCatalogueDishForVisit } from '@/lib/visitActions';
 import RatingPicker from './RatingPicker';
 import DishFeedbackPicker, { GUEST_KEY, type DraftDish } from './DishFeedbackPicker';
 import type { Dish, Person, VisitAgain, SaveVisitPayload } from '@/lib/types';
+import { todayLocalIso } from '@/lib/date';
 
 const VISIT_AGAIN_OPTIONS: { value: VisitAgain; label: string }[] = [
   { value: 'yes', label: 'Yes' },
   { value: 'maybe', label: 'Maybe' },
   { value: 'no', label: 'No' },
 ];
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 /**
  * Stage 6B's fast path: Who went? → Rate it → Go back? → Save, in ~10
@@ -123,7 +120,7 @@ export default function FastVisitSheet({
     try {
       const payload: SaveVisitPayload = {
         restaurant_id: restaurantId,
-        visited_at: todayIso(),
+        visited_at: todayLocalIso(),
         occasion: null,
         overall_rating: rating,
         would_return: wouldReturn,
