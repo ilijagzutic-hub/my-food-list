@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from './supabase';
+import { groupPrimaryImages, RESTAURANT_IMAGE_COLUMNS } from './images';
 import type { Dish, Restaurant, RestaurantWithDishes } from './types';
 
 interface State {
@@ -16,13 +17,24 @@ export function useRestaurants() {
   const load = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, error: null }));
     try {
-      const [{ data: restaurants, error: rErr }, { data: dishes, error: dErr }] = await Promise.all([
+      const [{ data: restaurants, error: rErr }, { data: dishes, error: dErr }, imageRes] = await Promise.all([
         supabase.from('restaurants').select('*').order('name', { ascending: true }),
         supabase.from('dishes').select('*'),
+        // ONE query for every restaurant's primary image variants (no per-restaurant lookups).
+        // Images are decoration: if this fails the list still loads and placeholders take over.
+        supabase
+          .from('restaurant_images')
+          .select(RESTAURANT_IMAGE_COLUMNS)
+          .eq('is_primary', true)
+          .then(
+            (res) => res,
+            () => ({ data: null, error: new Error('images unavailable') })
+          ),
       ]);
 
       if (rErr) throw rErr;
       if (dErr) throw dErr;
+      const imagesByRestaurant = groupPrimaryImages(imageRes.error ? null : (imageRes.data as never));
 
       const dishesByRestaurant = new Map<number, Dish[]>();
       (dishes || []).forEach((d) => {
@@ -37,6 +49,7 @@ export function useRestaurants() {
       const merged: RestaurantWithDishes[] = (restaurants as Restaurant[]).map((r) => ({
         ...r,
         dishes: dishesByRestaurant.get(r.id) || [],
+        images: imagesByRestaurant.get(r.id),
       }));
 
       setState({ restaurants: merged, loading: false, error: null });

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { RestaurantWithDishes } from '@/lib/types';
 import { parseRating, formatRating } from '@/lib/rating';
 import PriorityBadge from './PriorityBadge';
+import RestaurantImage from './RestaurantImage';
 
 /**
  * A single-line preview row — not a full RestaurantCard. Used by My Food's
@@ -22,9 +23,18 @@ export default function RestaurantMiniRow({ restaurant }: { restaurant: Restaura
       href={`/restaurant/${restaurant.id}/`}
       className="flex items-center justify-between gap-3 py-2.5 border-b border-cream-300/10 last:border-b-0 tap-highlight-none"
     >
-      <div className="min-w-0">
-        <p className="text-[14px] text-cream-50 truncate">{restaurant.name}</p>
-        {subtitle && <p className="text-[12px] text-cream-300/55 truncate">{subtitle}</p>}
+      <div className="min-w-0 flex items-center gap-3">
+        {/* 40px tile (Stage 7B.1): fits inside the row's existing two-line height. */}
+        <RestaurantImage
+          restaurant={restaurant}
+          variant="thumb"
+          compact
+          className="h-10 w-10 shrink-0 rounded-md"
+        />
+        <div className="min-w-0">
+          <p className="text-[14px] text-cream-50 truncate">{restaurant.name}</p>
+          {subtitle && <p className="text-[12px] text-cream-300/55 truncate">{subtitle}</p>}
+        </div>
       </div>
       <div className="shrink-0 flex items-center gap-2">
         {rating != null ? (

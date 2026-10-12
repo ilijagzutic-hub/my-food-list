@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { RestaurantWithDishes } from '@/lib/types';
 import { formatDistance } from '@/lib/geo';
 import { parseRating } from '@/lib/rating';
+import RestaurantImage from './RestaurantImage';
 
 // PriorityBadge's palette (light text for the app's dark forest background)
 // is illegible on Leaflet's white popup chrome, so the popup gets its own
@@ -33,6 +34,14 @@ export default function MapPopupCard({ restaurant: r }: { restaurant: Restaurant
 
   return (
     <div className="w-[220px] font-sans">
+      {/* Fixed 220x96 box (explicit size, not aspect-driven) so Leaflet measures the popup correctly
+          before the image arrives. Thumb variant only; eager because the popup is already open. */}
+      <RestaurantImage
+        restaurant={r}
+        variant="thumb"
+        eager
+        className="h-[96px] w-[220px] rounded-md mb-2"
+      />
       <div className="flex items-start justify-between gap-2">
         <p className="font-serif text-[15px] leading-snug text-forest-950">{r.name}</p>
         {r.is_favourite && <span className="text-[13px] shrink-0">★</span>}

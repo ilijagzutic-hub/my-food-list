@@ -5,3 +5,8 @@ out/
 .DS_Store
 *.tsbuildinfo
 next-env.d.ts
+
+# secrets / local credentials (never commit; the image-upload tool reads its key from the environment)
+.env
+.env.*
+!.env.example

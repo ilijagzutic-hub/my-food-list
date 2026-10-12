@@ -1,0 +1,15 @@
+{
+  "name": "restaurant-image-upload",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Trusted local tool: resize, strip metadata, upload and register an approved restaurant image. Never shipped to the browser.",
+  "type": "module",
+  "scripts": {
+    "upload": "node upload.mjs",
+    "selftest": "node selftest.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "sharp": "^0.33.5"
+  }
+}

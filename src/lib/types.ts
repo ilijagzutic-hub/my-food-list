@@ -51,9 +51,28 @@ export interface Dish {
   dish_status: DishStatus | null;
 }
 
+// Stage 7B.1: restaurant imagery lives in its own table (restaurant_images), one row per stored
+// variant. Only the PRIMARY image's variants are loaded alongside restaurants.
+export type ImageVariant = 'thumb' | 'hero';
+export type ImageSourceKind = 'own_photo' | 'owner_permission' | 'open_license';
+
+export interface RestaurantImageVariant {
+  storage_path: string; // path inside the restaurant-images bucket — never a URL (see lib/images.ts)
+  width: number;
+  height: number;
+  dominant_color: string | null;
+  source_kind: ImageSourceKind;
+  credit: string | null;
+  source_url: string | null;
+  license_note: string | null;
+}
+
+export type RestaurantImageSet = Partial<Record<ImageVariant, RestaurantImageVariant>>;
+
 export interface RestaurantWithDishes extends Restaurant {
   dishes: Dish[];
   distanceKm?: number | null;
+  images?: RestaurantImageSet;
 }
 
 export interface Coords {

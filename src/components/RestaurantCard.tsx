@@ -8,6 +8,7 @@ import FastVisitSheet from './FastVisitSheet';
 import LogVisitSheet from './LogVisitSheet';
 import Rating from './Rating';
 import DishCatalogue from './DishCatalogue';
+import RestaurantImage from './RestaurantImage';
 import FavouriteToggle from './FavouriteToggle';
 import ReallyWantToTryToggle from './ReallyWantToTryToggle';
 import { formatDistance } from '@/lib/geo';
@@ -84,8 +85,17 @@ export default function RestaurantCard({
             onToggle();
           }
         }}
-        className="w-full text-left px-4 py-3.5 flex flex-col gap-1 tap-highlight-none active:bg-forest-800 cursor-pointer"
+        className="w-full text-left px-4 py-3.5 flex items-start gap-3 tap-highlight-none active:bg-forest-800 cursor-pointer"
       >
+        {/* Compact thumbnail (Stage 7B.1) — sits inside the existing row height, so cards don't grow.
+            Uses the small `thumb` variant only; placeholder when there's no photo. */}
+        <RestaurantImage
+          restaurant={r}
+          variant="thumb"
+          compact
+          className="h-16 w-16 shrink-0 rounded-lg border border-cream-300/10"
+        />
+        <div className="min-w-0 flex-1 flex flex-col gap-1">
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-serif text-[17px] leading-snug text-cream-50">{r.name}</h3>
           <div className="shrink-0 flex items-center gap-2.5 mt-0.5">
@@ -137,6 +147,7 @@ export default function RestaurantCard({
         )}
         <div className="mt-1">
           <PriorityBadge priority={r.priority} />
+        </div>
         </div>
       </div>
 

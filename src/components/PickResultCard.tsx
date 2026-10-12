@@ -10,6 +10,7 @@ import { parseRating } from '@/lib/rating';
 import type { Person } from '@/lib/types';
 import PriorityBadge from './PriorityBadge';
 import FastVisitSheet from './FastVisitSheet';
+import RestaurantImage from './RestaurantImage';
 
 /**
  * A Pick result — deliberately not RestaurantCard: this needs to foreground
@@ -37,7 +38,15 @@ export default function PickResultCard({
   const router = useRouter();
 
   return (
-    <div className="rounded-xl2 bg-forest-800/60 border border-cream-300/10 p-4">
+    <div className="rounded-xl2 bg-forest-800/60 border border-cream-300/10 p-4 overflow-hidden">
+      {/* Stage 7B.1: full-bleed banner (hero variant) — what you'd be choosing, at a glance. */}
+      <RestaurantImage
+        restaurant={r}
+        variant="hero"
+        aspect="aspect-[16/9]"
+        alt={r.name}
+        className="-mx-4 -mt-4 mb-3.5"
+      />
       <div className="flex items-start justify-between gap-2">
         <h3 className="font-serif text-[18px] leading-snug text-cream-50">{r.name}</h3>
         <div className="flex items-center gap-1.5 shrink-0">

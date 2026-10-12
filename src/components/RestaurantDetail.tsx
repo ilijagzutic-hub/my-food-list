@@ -14,6 +14,7 @@ import FastVisitSheet from './FastVisitSheet';
 import LogVisitSheet from './LogVisitSheet';
 import VisitCard from './VisitCard';
 import BottomNav from './BottomNav';
+import RestaurantImage, { ImageCredit } from './RestaurantImage';
 import { parseRating } from '@/lib/rating';
 
 const VISITS_INITIAL_CAP = 5;
@@ -101,9 +102,18 @@ export default function RestaurantDetail({ id }: { id: number }) {
         </Link>
       </div>
 
-      {/* Header — polished, non-image. A fixed block that can later host a
-          hero photo without restructuring the page. */}
-      <div className="mx-4 mt-3 rounded-xl2 overflow-hidden bg-gradient-to-br from-forest-700 via-forest-800 to-forest-950 border border-cream-300/10 px-5 py-6">
+      {/* Header — hero image (Stage 7B.1) over the name block. The hero is a fixed-ratio box: the real
+          photo fades in over the designed placeholder, and the placeholder stays if there's no photo or
+          Storage is unavailable. 16:9 on phones, a slimmer 21:9 from the md breakpoint up. */}
+      <div className="mx-4 mt-3 rounded-xl2 overflow-hidden bg-gradient-to-br from-forest-700 via-forest-800 to-forest-950 border border-cream-300/10">
+        <RestaurantImage
+          restaurant={r}
+          variant="hero"
+          aspect="aspect-[16/9] md:aspect-[21/9]"
+          alt={r.name}
+          eager
+        />
+        <div className="px-5 py-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="font-serif text-[24px] leading-tight text-cream-50">{r.name}</h1>
@@ -131,6 +141,10 @@ export default function RestaurantDetail({ id }: { id: number }) {
         <div className="flex items-center gap-3 mt-4">
           <PriorityBadge priority={r.priority} />
           <span className="text-[12px] uppercase tracking-wide text-cream-300/60">{r.status}</span>
+        </div>
+        <div className="mt-3 empty:hidden">
+          <ImageCredit images={r.images} />
+        </div>
         </div>
       </div>
 
